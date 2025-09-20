@@ -25,7 +25,7 @@
     <h3>Login</h3>
     <div class="row">
       <input id="email" type="email" placeholder="you@example.com" />
-      <button id="btnSend" type="button">Send magic link</button>
+      <button id="btnSend" type="button" onclick="sendMagicLink()">Send magic link</button>
     </div>
     <p id="loginMsg"></p>
   </section>
@@ -33,76 +33,73 @@
   <section id="appCard" class="card hidden">
     <div class="row">
       <div>Signed in as <strong id="who"></strong></div>
-      <button id="btnRefresh" type="button">Refresh Library</button>
-      <button id="btnSignOut" type="button">Sign out</button>
+      <button id="btnRefresh" type="button" onclick="refresh()">Refresh Library</button>
+      <button id="btnSignOut" type="button" onclick="signOut()">Sign out</button>
     </div>
     <div class="row">
       <input id="file" type="file" multiple />
-      <button id="btnUpload" type="button">Upload</button>
+      <button id="btnUpload" type="button" onclick="upload()">Upload</button>
     </div>
     <h3>Your Library</h3>
     <ul id="library"></ul>
   </section>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const $ = id => document.getElementById(id);
-  const show = v => { $('loginCard').classList.toggle('hidden', v!=='login'); $('appCard').classList.toggle('hidden', v!=='app'); };
+const $ = id => document.getElementById(id);
+function show(v){ $('loginCard').classList.toggle('hidden', v!=='login'); $('appCard').classList.toggle('hidden', v!=='app'); }
 
-  async function sendMagicLink(){
-    const email = $('email').value.trim();
-    if (!email) return;
-    const msg = $('loginMsg');
-    msg.textContent = 'Sending...';
-    try{
-      const res = await fetch('/api/auth/request-link', {
-        method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ email })
-      });
-      const raw = await res.text();
-      let data = null; try { data = JSON.parse(raw); } catch {}
-      const match = raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i);
-      const link = (data && data.link) ? data.link : (match ? match[0] : null);
+async function sendMagicLink(){
+  const email = $('email').value.trim();
+  if (!email) return;
+  const msg = $('loginMsg');
+  msg.textContent = 'Sending...';
+  try{
+    const res = await fetch('/api/auth/request-link', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ email })
+    });
+    const raw = await res.text();
+    let data = null; try { data = JSON.parse(raw); } catch {}
+    const match = raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i);
+    const link = (data && data.link) ? data.link : (match ? match[0] : null);
 
-      if (link){
-        msg.textContent = 'Check your email for the sign-in link.';
-        const a = document.createElement('a');
-        a.href = link; a.rel='noopener'; a.textContent = ' Or click here to sign in now.'; a.style.marginLeft = '6px';
-        msg.appendChild(a);
-      } else {
-        msg.textContent = 'Could not send email.';
-        console.error('request-link response:', res.status, raw);
-      }
-    }catch(e){
-      msg.textContent = 'Could not send email.'; console.error(e);
+    if (link){
+      msg.textContent = 'Check your email for the sign-in link.';
+      const a = document.createElement('a');
+      a.href = link; a.rel='noopener'; a.textContent = ' Or click here to sign in now.'; a.style.marginLeft='6px';
+      msg.appendChild(a);
+    } else {
+      msg.textContent = 'Could not send email.';
+      console.error('request-link response:', res.status, raw);
     }
+  }catch(e){
+    msg.textContent = 'Could not send email.'; console.error(e);
   }
+}
 
-  async function fetchMe(){ const r=await fetch('/api/me',{headers:{accept:'application/json'}}); if(!r.ok) return null; return r.json(); }
-  function renderList(items){
-    const ul=$('library'); ul.innerHTML='';
-    if(!items||!items.length){ ul.innerHTML='<li><small>No books yet. Upload an EPUB or PDF.</small></li>'; return; }
-    for(const b of items){
-      const li=document.createElement('li');
-      const open=`/read.html?id=${b.id}&type=${b.type}`;
-      li.innerHTML = `<a href="${open}"><strong>${b.title||'Untitled'}</strong></a> <code>[${b.type}]</code> `
-        + (b.author?`<small>${b.author}</small> `:'')
-        + `— <a href="/api/books/${b.id}/file" target="_blank" rel="noopener">Open direct</a>`;
-      ul.appendChild(li);
-    }
+async function fetchMe(){ const r=await fetch('/api/me',{headers:{accept:'application/json'}}); if(!r.ok) return null; return r.json(); }
+function renderList(items){
+  const ul=$('library'); ul.innerHTML='';
+  if(!items||!items.length){ ul.innerHTML='<li><small>No books yet. Upload an EPUB or PDF.</small></li>'; return; }
+  for(const b of items){
+    const li=document.createElement('li');
+    const open=`/read.html?id=${b.id}&type=${b.type}`;
+    li.innerHTML = `<a href="${open}"><strong>${b.title||'Untitled'}</strong></a> <code>[${b.type}]</code> `
+      + (b.author?`<small>${b.author}</small> `:'')
+      + `— <a href="/api/books/${b.id}/file" target="_blank" rel="noopener">Open direct</a>`;
+    ul.appendChild(li);
   }
-  async function refresh(){ try{ const me=await fetchMe(); if(!me){ show('login'); return; } $('who').textContent=me.email||''; renderList(me.items||[]); show('app'); }catch{ show('login'); } }
-  async function upload(){
-    const files=$('file').files; if(!files||!files.length) return;
-    const fd=new FormData(); for(const f of files) fd.append('files', f, f.name);
-    const btn=$('btnUpload'); btn.disabled=true; btn.textContent='Uploading...';
-    try{ const r=await fetch('/api/upload',{method:'POST',body:fd}); if(!r.ok) throw 0; await refresh(); $('file').value=''; }
-    catch{ alert('Upload failed'); } finally{ btn.disabled=false; btn.textContent='Upload'; }
-  }
-  async function signOut(){ try{ await fetch('/api/auth/signout',{method:'POST'});}catch{} show('login'); }
-
-  $('btnSend').addEventListener('click', sendMagicLink);
-  $('email').addEventListener('keydown', e => { if(e.key==='Enter') sendMagicLink(); });
-  $('btnRefresh').addEventListener('click', refresh);
-  $('btnUpload').addEventListener('click', upload);
-  $('btnSignOut').addEventListener('click', signOut);
+}
+async function refresh(){ try{ const me=await fetchMe(); if(!me){ show('login'); return; } $('who').textContent=me.email||''; renderList(me.items||[]); show('app'); }catch{ show('login'); } }
+async function upload(){
+  const files=$('file').files; if(!files||!files.length) return;
+  const fd=new FormData(); for(const f of files) fd.append('files', f, f.name);
+  const btn=$('btnUpload'); btn.disabled=true; btn.textContent='Uploading...';
+  try{ const r=await fetch('/api/upload',{method:'POST',body:fd}); if(!r.ok) throw 0; await refresh(); $('file').value=''; }
+  catch{ alert('Upload failed'); } finally{ btn.disabled=false; btn.textContent='Upload'; }
+}
+async function signOut(){ try{ await fetch('/api/auth/signout',{method:'POST'});}catch{} show('login'); }
+refresh(); // on load
+</script>
+</body>
+</html>
