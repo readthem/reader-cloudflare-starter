@@ -1,41 +1,61 @@
 // functions/api/books.ts
-// Lists the signed-in user's books.
+// List the signed-in user's books. Self-contained so it will compile even if _lib changes.
 
-import type { Env } from '../_lib/env';
-import { requireUser } from '../_lib/auth';
-
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  // auth
-  const user = await requireUser(request, env);
-  if (!user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
+export const onRequestGet: PagesFunction<{
+  DB: D1Database
+}> = async ({ request, env }) => {
   try {
-    // Minimal, stable columns. created_at is TEXT (CURRENT_TIMESTAMP) so it sorts fine.
-    const stmt = env.DB.prepare(
-      `SELECT
-         id,
-         title,
-         type,
-         r2_key   AS r2Key,
-         created_at AS createdAt
-       FROM books
-       WHERE user_id = ?1
-       ORDER BY created_at DESC, id DESC`
-    ).bind(user.id);
+    // ---- authenticate via sid cookie ----
+    const sid = getCookie(request.headers.get('cookie') || '', 'sid');
+    if (!sid) return text('Unauthorized', 401);
 
-    const { results } = await stmt.all();
+    const user = await env.DB
+      .prepare(
+        `SELECT u.id, u.email
+           FROM sessions s
+           JOIN users u ON u.id = s.user_id
+          WHERE s.id = ?1
+          LIMIT 1`
+      )
+      .bind(sid)
+      .first<{ id: string; email: string }>();
 
-    return new Response(JSON.stringify({ items: results ?? [] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    if (!user) return text('Unauthorized', 401);
+
+    // ---- fetch books for user ----
+    const { results } = await env.DB
+      .prepare(
+        `SELECT
+            id,
+            title,
+            type,
+            r2_key    AS r2Key,
+            created_at AS createdAt
+         FROM books
+         WHERE user_id = ?1
+         ORDER BY created_at DESC, id DESC`
+      )
+      .bind(user.id)
+      .all();
+
+    return json({ items: results ?? [] });
   } catch (err: any) {
-    // Always return JSON so the UI can surface the message.
-    return new Response(JSON.stringify({ items: [], error: String(err?.message ?? err) }), {
-      status: 500,
-      headers: { 'content-type': 'application/json' },
-    });
+    // Always return JSON so the UI doesn't get a big HTML error page.
+    return json({ items: [], error: String(err?.message ?? err) }, 500);
   }
 };
+
+// ---------- helpers ----------
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+function text(msg: string, status = 200) {
+  return new Response(msg, { status, headers: { 'content-type': 'text/plain' } });
+}
+function getCookie(cookieHeader: string, name: string) {
+  const m = cookieHeader.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]) : null;
+}
