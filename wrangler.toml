@@ -1,0 +1,21 @@
+name = "reader-cloudflare"
+main = "functions/[[path]].ts"
+compatibility_date = "2025-09-01"
+account_id = "12bc3eb678fca93c807f9a35b434b044"
+
+pages_build_output_dir = "public"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "reader-files"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "reader-db"
+database_id = "3144c252-7090-4997-8475-49591ca38e8e"
+
+[vars]
+APP_ORIGIN = "http://127.0.0.1:8788"
+AUTH_SECRET = "change_me_to_a_long_random_string"
+EMAIL_FROM = "no-reply@yourdomain.com"
+TURNSTILE_SECRET = ""

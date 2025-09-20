@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Reader – Open Book</title>
+  <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3/dist/epub.min.js"></script>
+  <style>
+    html,body,#viewer{height:100%;margin:0}
+    #viewer{max-width:900px;margin:0 auto}
+    #msg{font:14px/1.4 system-ui, sans-serif; padding:12px}
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+  <div id="msg"></div>
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const id = qs.get('id');
+    const type = (qs.get('type') || 'epub').toLowerCase();
+    const msg = document.getElementById('msg');
+    if (!id) { msg.textContent = 'Missing id'; throw new Error('missing id'); }
+
+    async function openPdf(){
+      // just stream it in a new tab
+      location.replace(`/api/books/${id}/file`);
+    }
+
+    async function openEpub(){
+      try{
+        msg.textContent = 'Loading book...';
+        const url = `/api/books/${id}/file`;
+        // Try letting epub.js fetch it directly (same-origin)
+        const book = ePub(url);
+        const rendition = book.renderTo('viewer', { width: "100%", height: "100%" });
+        rendition.display().then(()=>{ msg.textContent = ''; });
+        book.on('renderer:locationChanged', () => { /* later: save progress */ });
+      }catch(err){
+        console.error(err);
+        msg.textContent = 'Could not render with epub.js. Opening direct...';
+        location.replace(`/api/books/${id}/file`);
+      }
+    }
+
+    if (type === 'pdf') openPdf(); else openEpub();
+  </script>
+</body>
+</html>

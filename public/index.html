@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reader Cloudflare Starter</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
+    .row { display: flex; gap: 1rem; align-items: center; }
+    .hidden { display: none; }
+    button { padding: .6rem 1rem; border-radius: 10px; border: 1px solid #e5e7eb; cursor: pointer; }
+    input[type="email"], input[type="file"] { padding: .6rem; border: 1px solid #e5e7eb; border-radius: 8px; }
+    ul { list-style: none; padding: 0; }
+    li { padding: .35rem 0; }
+    code { background: #f6f7f9; padding: .2rem .4rem; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Reader Cloudflare Starter</h1>
+
+  <section id="loginCard" class="card">
+    <h3>Login</h3>
+    <div class="row">
+      <input id="email" type="email" placeholder="you@example.com" />
+      <button id="btnSend">Send magic link</button>
+    </div>
+    <p id="loginMsg"></p>
+  </section>
+
+  <section id="appCard" class="card hidden">
+    <div class="row">
+      <div>Signed in as <strong id="who"></strong></div>
+      <button id="btnRefresh">Refresh Library</button>
+      <button id="btnSignOut">Sign out</button>
+    </div>
+    <div class="row">
+      <input id="file" type="file" multiple />
+      <button id="btnUpload">Upload</button>
+    </div>
+    <h3>Your Library</h3>
+    <ul id="library"></ul>
+  </section>
+
+<script>
+async function api(path, opts={}){
+  const res = await fetch(path, { credentials: 'include', ...opts });
+  if (!res.ok) throw new Error(await res.text());
+  return res.headers.get('content-type')?.includes('application/json')
+    ? res.json()
+    : res.text();
+}
+
+async function checkMe(){
+  try{
+    const me = await api('/api/me');
+    document.getElementById('who').textContent = me.user.email;
+    document.getElementById('loginCard').classList.add('hidden');
+    document.getElementById('appCard').classList.remove('hidden');
+    await refreshLibrary();
+  }catch(e){
+    document.getElementById('loginCard').classList.remove('hidden');
+    document.getElementById('appCard').classList.add('hidden');
+  }
+}
+
+async function sendMagicLink(){
+  const email = document.getElementById('email').value.trim();
+  if(!email) return;
+  document.getElementById('loginMsg').textContent = 'Sending...';
+  await fetch('/api/auth/request-link', {
+    method: 'POST',
+    headers: {'content-type':'application/json'},
+    body: JSON.stringify({ email })
+  });
+  document.getElementById('loginMsg').textContent = 'Check your email for the sign-in link.';
+}
+
+async function refreshLibrary(){
+  const data = await api('/api/library');
+  const ul = document.getElementById('library');
+  ul.innerHTML = '';
+  
+data.items.forEach(b => {
+  const li = document.createElement('li');
+  const title = (b.title || 'Untitled');
+  const openHref = b.type === 'pdf'
+    ? `/api/books/${b.id}/file`
+    : `/read.html?id=${b.id}&type=${b.type}`;
+  li.innerHTML = `<a href="${openHref}"><strong>${title}</strong></a> ` +
+                 `<code>[${b.type}]</code> ` +
+                 `<small>${b.author || ''}</small>`;
+  ul.appendChild(li);
+});
+}
+
+async function uploadFiles(){
+  const input = document.getElementById('file');
+  const files = Array.from(input.files || []);
+  for(const f of files){
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    const type = (ext === 'pdf') ? 'pdf' : 'epub';
+    const bookId = crypto.randomUUID();
+    const qs = new URLSearchParams({ bookId, ext, filename: f.name });
+    const res = await fetch('/api/upload?' + qs, {
+      method: 'POST',
+      body: f, // streamed to worker -> R2
+    });
+    if(!res.ok){ console.error(await res.text()); }
+  }
+  await refreshLibrary();
+}
+
+async function signOut(){
+  await fetch('/api/auth/signout', { method: 'POST' });
+  await checkMe();
+}
+
+document.getElementById('btnSend').onclick = sendMagicLink;
+document.getElementById('btnRefresh').onclick = refreshLibrary;
+document.getElementById('btnUpload').onclick = uploadFiles;
+document.getElementById('btnSignOut').onclick = signOut;
+
+checkMe();
+</script>
+</body>
+</html>
