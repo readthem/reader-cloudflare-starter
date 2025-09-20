@@ -43,85 +43,31 @@
   </section>
 
 <script>
-async function api(path, opts={}){
-  const res = await fetch(path, { credentials: 'include', ...opts });
-  if (!res.ok) throw new Error(await res.text());
-  return res.headers.get('content-type')?.includes('application/json')
-    ? res.json()
-    : res.text();
-}
-
-async function checkMe(){
-  try{
-    const me = await api('/api/me');
-    document.getElementById('who').textContent = me.user.email;
-    document.getElementById('loginCard').classList.add('hidden');
-    document.getElementById('appCard').classList.remove('hidden');
-    await refreshLibrary();
-  }catch(e){
-    document.getElementById('loginCard').classList.remove('hidden');
-    document.getElementById('appCard').classList.add('hidden');
-  }
-}
-
 async function sendMagicLink(){
   const email = document.getElementById('email').value.trim();
-  if(!email) return;
-  document.getElementById('loginMsg').textContent = 'Sending...';
-  await fetch('/api/auth/request-link', {
-    method: 'POST',
-    headers: {'content-type':'application/json'},
-    body: JSON.stringify({ email })
-  });
-  document.getElementById('loginMsg').textContent = 'Check your email for the sign-in link.';
-}
-
-async function refreshLibrary(){
-  const data = await api('/api/library');
-  const ul = document.getElementById('library');
-  ul.innerHTML = '';
-  
-data.items.forEach(b => {
-  const li = document.createElement('li');
-  const title = (b.title || 'Untitled');
-  const openHref = b.type === 'pdf'
-    ? `/api/books/${b.id}/file`
-    : `/read.html?id=${b.id}&type=${b.type}`;
-  li.innerHTML = `<a href="${openHref}"><strong>${title}</strong></a> ` +
-                 `<code>[${b.type}]</code> ` +
-                 `<small>${b.author || ''}</small>`;
-  ul.appendChild(li);
-});
-}
-
-async function uploadFiles(){
-  const input = document.getElementById('file');
-  const files = Array.from(input.files || []);
-  for(const f of files){
-    const ext = (f.name.split('.').pop() || '').toLowerCase();
-    const type = (ext === 'pdf') ? 'pdf' : 'epub';
-    const bookId = crypto.randomUUID();
-    const qs = new URLSearchParams({ bookId, ext, filename: f.name });
-    const res = await fetch('/api/upload?' + qs, {
-      method: 'POST',
-      body: f, // streamed to worker -> R2
+  if (!email) return;
+  const msg = document.getElementById('loginMsg');
+  msg.textContent = 'Sending...';
+  try{
+    const res = await fetch('/api/auth/request-link', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ email })
     });
-    if(!res.ok){ console.error(await res.text()); }
+    const data = await res.json();
+    msg.textContent = 'Check your email for the sign-in link.';
+    if (data.link) {
+      const a = document.createElement('a');
+      a.href = data.link;
+      a.textContent = ' Or click here to sign in now.';
+      a.rel = 'noopener';
+      a.style.marginLeft = '6px';
+      msg.appendChild(a);
+    }
+  }catch(e){
+    msg.textContent = 'Could not send email.';
   }
-  await refreshLibrary();
 }
-
-async function signOut(){
-  await fetch('/api/auth/signout', { method: 'POST' });
-  await checkMe();
-}
-
-document.getElementById('btnSend').onclick = sendMagicLink;
-document.getElementById('btnRefresh').onclick = refreshLibrary;
-document.getElementById('btnUpload').onclick = uploadFiles;
-document.getElementById('btnSignOut').onclick = signOut;
-
-checkMe();
 </script>
 </body>
 </html>
