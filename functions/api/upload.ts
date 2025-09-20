@@ -1,3 +1,6 @@
+mkdir -p functions/api
+
+cat > functions/api/upload.ts <<'TS'
 // functions/api/upload.ts
 import type { Env } from '../_lib/env';
 import { json, badRequest, unauthorized } from '../_lib/responses';
@@ -22,18 +25,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const ctype = request.headers.get('content-type') || '';
 
-  // --- Path 1: multipart/form-data (recommended from the UI) ---
+  // Path 1: multipart/form-data (UI uses this)
   if (ctype.toLowerCase().includes('multipart/form-data')) {
     const form = await request.formData();
 
-    // Accept either "files" (multiple) or "file" (single)
+    // Accept "files" (multiple) or "file" (single)
     const files: File[] = [];
     for (const [k, v] of form.entries()) {
       if ((k === 'files' || k === 'file') && v instanceof File) files.push(v);
     }
     if (!files.length) return badRequest('no files found (use form field "files" or "file")');
 
-    const results: Array<{ id: string; key: string; title: string }> = [];
+    const uploaded: Array<{ id: string; key: string; title: string }> = [];
 
     for (const file of files) {
       const originalName = (file as any).name || 'upload';
@@ -59,13 +62,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         .bind(bookId, user.id, title, null, key, type)
         .run();
 
-      results.push({ id: bookId, key, title });
+      uploaded.push({ id: bookId, key, title });
     }
 
-    return json({ ok: true, uploaded: results });
+    return json({ ok: true, uploaded });
   }
 
-  // --- Path 2: raw body with ?ext=&filename=&bookId= (backwards-compatible) ---
+  // Path 2: raw body + ?ext=&filename=&bookId= (back-compat)
   const url = new URL(request.url);
   const bookId = url.searchParams.get('bookId') || crypto.randomUUID();
   let ext = (url.searchParams.get('ext') || '').toLowerCase() as '' | 'pdf' | 'epub';
@@ -91,3 +94,4 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({ ok: true, id: bookId, key, title });
 };
+TS
