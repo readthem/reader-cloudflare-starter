@@ -68,6 +68,13 @@ async function sendMagicLink(){
     msg.textContent = 'Could not send email.';
   }
 }
+<script>
+document.getElementById('btnSend').addEventListener('click', sendMagicLink);
+document.getElementById('email').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendMagicLink();
+});
+</script>
+  
 </script>
 </body>
 </html>
