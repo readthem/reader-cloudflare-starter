@@ -14,7 +14,7 @@ database_name = "reader-db"
 database_id = "..."
 
 [vars]
-APP_ORIGIN = "https://reader-cloudflare-starter.pages.dev"  # <-- set this
-AUTH_SECRET = "<keep your existing long string>"
-EMAIL_FROM = "login@readthem.online"        # or whatever you used
+APP_ORIGIN = "https://reader-cloudflare-starter.pages.dev"   # <-- exact production URL
+AUTH_SECRET = "<your long base64 secret here>"               # use your generated one
+EMAIL_FROM = "login@readthem.online"                         # any address for now
 TURNSTILE_SECRET = ""
