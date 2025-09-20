@@ -1,3 +1,4 @@
+cat > functions/api/upload.ts <<'TS'
 // functions/api/upload.ts
 import type { Env } from '../_lib/env';
 import { json, badRequest, unauthorized } from '../_lib/responses';
@@ -20,10 +21,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let ext = '';
 
   if (ct.includes('multipart/form-data')) {
-    // Upload coming from the <input type="file" name="files">
     const form = await request.formData();
-    const f = form.get('files');
-    if (!(f instanceof File)) return badRequest('missing "files" form field');
+    const f = form.get('files') || form.get('file');
+    if (!(f instanceof File)) return badRequest('missing "files" or "file" form field');
     file = f;
     filename = (f as any).name || filename;
     ext = (filename.split('.').pop() || '').toLowerCase();
@@ -31,7 +31,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ext = inferExtFromType(f.type) || ext;
     }
   } else {
-    // Raw body + query string ?ext=epub&filename=foo.epub
     const url = new URL(request.url);
     filename = url.searchParams.get('filename') || filename;
     ext = (url.searchParams.get('ext') || '').toLowerCase();
@@ -46,7 +45,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const key = `user/${user.id}/books/${bookId}.${ext}`;
   const contentType = ext === 'pdf' ? 'application/pdf' : 'application/epub+zip';
 
-  // Stream into R2
   if (file) {
     await env.R2.put(key, file.stream(), { httpMetadata: { contentType } });
   } else {
@@ -64,3 +62,4 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({ ok: true, id: bookId, key, type, title });
 };
+TS
