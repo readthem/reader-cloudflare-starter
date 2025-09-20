@@ -27,7 +27,7 @@
       <input id="email" type="email" placeholder="you@example.com" />
       <button id="btnSend">Send magic link</button>
     </div>
-    <p id="loginMsg"> </p>
+    <p id="loginMsg"></p>
   </section>
 
   <section id="appCard" class="card hidden">
@@ -45,12 +45,8 @@
   </section>
 
 <script>
-const $ = (id) => document.getElementById(id);
-
-function show(view){
-  $('loginCard').classList.toggle('hidden', view !== 'login');
-  $('appCard').classList.toggle('hidden', view !== 'app');
-}
+const $ = id => document.getElementById(id);
+function show(view){ $('loginCard').classList.toggle('hidden', view!=='login'); $('appCard').classList.toggle('hidden', view!=='app'); }
 
 async function sendMagicLink(){
   const email = $('email').value.trim();
@@ -63,15 +59,26 @@ async function sendMagicLink(){
       headers:{'content-type':'application/json'},
       body: JSON.stringify({ email })
     });
-    const data = await res.json();
-    msg.textContent = 'Check your email for the sign-in link.';
-    if (data && data.link){
+
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch {}
+
+    // Prefer JSON {link}; otherwise try to find the link in raw text
+    const match = raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i);
+    const link = (data && data.link) ? data.link : (match ? match[0] : null);
+
+    if (link){
+      msg.textContent = 'Check your email for the sign-in link.';
       const a = document.createElement('a');
-      a.href = data.link;
+      a.href = link;
       a.textContent = ' Or click here to sign in now.';
-      a.rel = 'noopener';
       a.style.marginLeft = '6px';
+      a.rel = 'noopener';
       msg.appendChild(a);
+    }else{
+      msg.textContent = `Could not send email.`;
+      console.error('request-link response:', res.status, raw);
     }
   }catch(e){
     msg.textContent = 'Could not send email.';
@@ -79,78 +86,30 @@ async function sendMagicLink(){
   }
 }
 
-async function fetchMe(){
-  const r = await fetch('/api/me', { headers:{'accept':'application/json'} });
-  if (!r.ok) return null;
-  return await r.json();
-}
-
+async function fetchMe(){ const r = await fetch('/api/me',{headers:{accept:'application/json'}}); if(!r.ok) return null; return r.json(); }
 function renderList(items){
-  const ul = $('library');
-  ul.innerHTML = '';
-  if (!items || !items.length){
-    ul.innerHTML = '<li><small>No books yet. Upload an EPUB or PDF.</small></li>';
-    return;
-  }
-  items.forEach(b => {
-    const li = document.createElement('li');
-    const title = b.title || 'Untitled';
-    const openHref = `/read.html?id=${b.id}&type=${b.type}`;
-    li.innerHTML =
-      `<a href="${openHref}"><strong>${title}</strong></a> ` +
-      `<code>[${b.type}]</code> ` +
-      (b.author ? `<small>${b.author}</small> ` : '') +
-      `— <a href="/api/books/${b.id}/file" target="_blank" rel="noopener">Open direct</a>`;
+  const ul=$('library'); ul.innerHTML='';
+  if(!items||!items.length){ ul.innerHTML='<li><small>No books yet. Upload an EPUB or PDF.</small></li>'; return; }
+  for(const b of items){
+    const li=document.createElement('li');
+    const title=b.title||'Untitled';
+    const openHref=`/read.html?id=${b.id}&type=${b.type}`;
+    li.innerHTML = `<a href="${openHref}"><strong>${title}</strong></a> <code>[${b.type}]</code> `
+      + (b.author?`<small>${b.author}</small> `:'')
+      + `— <a href="/api/books/${b.id}/file" target="_blank" rel="noopener">Open direct</a>`;
     ul.appendChild(li);
-  });
-}
-
-async function refresh(){
-  try{
-    const me = await fetchMe();
-    if (!me){ show('login'); return; }
-    $('who').textContent = me.email || '';
-    renderList(me.items || []);
-    show('app');
-  }catch(e){
-    console.error(e);
-    show('login');
   }
 }
-
+async function refresh(){ try{ const me=await fetchMe(); if(!me){ show('login'); return; } $('who').textContent=me.email||''; renderList(me.items||[]); show('app'); }catch{ show('login'); } }
 async function upload(){
-  const files = $('file').files;
-  if (!files || !files.length) return;
-  const fd = new FormData();
-  for (const f of files) fd.append('files', f, f.name);
-  const btn = $('btnUpload');
-  btn.disabled = true;
-  btn.textContent = 'Uploading...';
-  try{
-    const r = await fetch('/api/upload', { method:'POST', body: fd });
-    if (!r.ok) throw new Error('upload failed');
-    await refresh();
-    $('file').value = '';
-  }catch(e){
-    alert('Upload failed. See console.'); console.error(e);
-  }finally{
-    btn.disabled = false; btn.textContent = 'Upload';
-  }
+  const files=$('file').files; if(!files||!files.length) return;
+  const fd=new FormData(); for(const f of files) fd.append('files', f, f.name);
+  const btn=$('btnUpload'); btn.disabled=true; btn.textContent='Uploading...';
+  try{ const r=await fetch('/api/upload',{method:'POST',body:fd}); if(!r.ok) throw 0; await refresh(); $('file').value=''; }
+  catch{ alert('Upload failed'); } finally{ btn.disabled=false; btn.textContent='Upload'; }
 }
-
-async function signOut(){
-  try{ await fetch('/api/auth/signout', { method:'POST' }); }catch{}
-  show('login');
-}
+async function signOut(){ try{ await fetch('/api/auth/signout',{method:'POST'});}catch{} show('login'); }
 
 $('btnSend').addEventListener('click', sendMagicLink);
-$('email').addEventListener('keydown', e => { if (e.key === 'Enter') sendMagicLink(); });
-$('btnRefresh').addEventListener('click', refresh);
-$('btnUpload').addEventListener('click', upload);
-$('btnSignOut').addEventListener('click', signOut);
-
-// Try to show the right view on load
-refresh();
-</script>
-</body>
-</html>
+$('email').addEventListener('keydown', e => { if(e.key==='Enter') sendMagicLink(); });
+$('btnRefresh').addEv
