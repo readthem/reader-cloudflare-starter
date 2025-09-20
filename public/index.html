@@ -20,7 +20,6 @@
 <body>
   <h1>Reader Cloudflare Starter</h1>
 
-  <!-- Login card -->
   <section id="loginCard" class="card">
     <h3>Login</h3>
     <div class="row">
@@ -30,7 +29,6 @@
     <p id="loginMsg"></p>
   </section>
 
-  <!-- App card -->
   <section id="appCard" class="card hidden">
     <div class="row">
       <div>Signed in as <strong id="who"></strong></div>
@@ -49,39 +47,20 @@
   </section>
 
 <script>
-/* ---------- small helpers ---------- */
-async function getJSON(url, opts={}) {
-  const r = await fetch(url, { credentials:'include', ...opts });
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return r.json();
-}
-async function getText(url, opts={}) {
-  const r = await fetch(url, { credentials:'include', ...opts });
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return r.text();
-}
+/* ---------- helpers ---------- */
 async function getMe() {
   try {
     const r = await fetch('/api/me', { credentials:'include' });
     if (!r.ok) return null;
     const t = await r.text();
-    try {
-      const j = JSON.parse(t);
-      // support {"user":{...}} or plain user
-      return j.user || j;
-    } catch {
-      return null;
-    }
+    try { const j = JSON.parse(t); return j.user || j; } catch { return null; }
   } catch { return null; }
 }
-
-/* ---------- auth UI ---------- */
 async function sendMagicLink(){
   const email = document.getElementById('email').value.trim();
   if (!email) return;
   const msg = document.getElementById('loginMsg');
   msg.textContent = 'Sending…';
-
   try{
     const r = await fetch('/api/auth/request-link', {
       method:'POST',
@@ -90,44 +69,33 @@ async function sendMagicLink(){
       body: JSON.stringify({ email })
     });
     const raw = await r.text();
-    let link;
-    try { link = JSON.parse(raw).link; } catch {}
+    let link; try { link = JSON.parse(raw).link; } catch {}
     if (!link) {
       const m = raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i);
       if (m) link = m[0];
     }
     if (link) {
-      msg.textContent = 'Link created. Finishing sign-in…';
-      const r2 = await fetch(link, { redirect:'manual', credentials:'include' });
-      // now we should have a cookie
-      await init(); // reload UI
+      await fetch(link, { redirect:'manual', credentials:'include' });
+      await init();
     } else {
-      msg.textContent = 'Server did not return a link.';
-      console.log('RAW:', raw);
+      msg.textContent = 'Server did not return a link.'; console.log('RAW:', raw);
     }
-  }catch(e){
-    msg.textContent = `Could not send email: ${e.message}`;
-  }
+  }catch(e){ msg.textContent = `Could not send email: ${e.message}`; }
 }
+async function signOut(){ try{ await fetch('/api/auth/signout',{method:'POST',credentials:'include'});}catch{} location.reload(); }
 
-async function signOut() {
-  try { await fetch('/api/auth/signout', { method:'POST', credentials:'include' }); } catch {}
-  location.reload();
-}
-
-/* ---------- library ---------- */
 async function refreshLibrary() {
   const ul = document.getElementById('library');
   ul.textContent = 'Loading…';
   try {
-    // Our list endpoint below:
-    const data = await getJSON('/api/books');
-    const items = data.items || data.books || data;
+    const r = await fetch('/api/books', { credentials:'include' });
+    const text = await r.text();
+    if (!r.ok) throw new Error(text || r.status);
+    let data; try { data = JSON.parse(text); } catch { throw new Error(text); }
+
+    const items = data.items || data.books || data || [];
     ul.textContent = '';
-    if (!items || !items.length) {
-      ul.textContent = 'No books yet. Upload an EPUB or PDF.';
-      return;
-    }
+    if (!items.length) { ul.textContent = 'No books yet. Upload an EPUB or PDF.'; return; }
     for (const b of items) {
       const li = document.createElement('li');
       const title = b.title || b.id;
@@ -140,36 +108,22 @@ async function refreshLibrary() {
   }
 }
 
-function inferExtFromType(t) {
-  t = (t || '').toLowerCase();
-  if (t.includes('pdf')) return 'pdf';
-  if (t.includes('epub')) return 'epub';
-  return null;
-}
+function inferExtFromType(t){ t=(t||'').toLowerCase(); if(t.includes('pdf'))return'pdf'; if(t.includes('epub'))return'epub'; return null; }
 
 async function uploadSelected() {
   const input = document.getElementById('file');
   const btn = document.getElementById('btnUpload');
   const msg = document.getElementById('uploadMsg');
-
   if (!input.files || !input.files.length) { alert('Pick a file first'); return; }
 
   btn.disabled = true; btn.textContent = 'Uploading…'; msg.textContent = '';
-
   try {
     for (const f of input.files) {
       const fd = new FormData();
-      fd.append('files', f, f.name); // preserve filename
-
-      const r = await fetch('/api/upload', {
-        method:'POST',
-        body: fd,
-        credentials:'include',
-      });
-
-      const text = await r.text();
-      if (!r.ok) throw new Error(text || `${r.status} Upload failed`);
-      console.log('Upload result:', text);
+      fd.append('files', f, f.name);
+      const r = await fetch('/api/upload', { method:'POST', body: fd, credentials:'include' });
+      const t = await r.text();
+      if (!r.ok) throw new Error(t || `${r.status} Upload failed`);
     }
     msg.textContent = 'Upload complete.';
     await refreshLibrary();
@@ -182,11 +136,10 @@ async function uploadSelected() {
 }
 
 /* ---------- boot ---------- */
-async function init() {
+async function init(){
   const me = await getMe();
   const loginCard = document.getElementById('loginCard');
   const appCard   = document.getElementById('appCard');
-
   if (me && me.email) {
     loginCard.classList.add('hidden');
     appCard.classList.remove('hidden');
@@ -197,13 +150,10 @@ async function init() {
     loginCard.classList.remove('hidden');
   }
 }
-
-// wire events
 document.getElementById('btnSend')?.addEventListener('click', sendMagicLink);
 document.getElementById('btnUpload')?.addEventListener('click', uploadSelected);
 document.getElementById('btnRefresh')?.addEventListener('click', refreshLibrary);
 document.getElementById('btnSignOut')?.addEventListener('click', signOut);
-
 init();
 </script>
 </body>
