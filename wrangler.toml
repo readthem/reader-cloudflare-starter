@@ -1,17 +1,17 @@
+# wrangler.toml (no AUTH_SECRET here)
 name = "reader-cloudflare"
 main = "functions/[[path]].ts"
 pages_build_output_dir = "public"
 
 [[r2_buckets]]
-binding = "R2"                 # <-- code uses env.R2
+binding = "R2"
 bucket_name = "reader-files"
 
 [[d1_databases]]
-binding = "DB"                 # <-- code uses env.DB
+binding = "DB"
 database_name = "reader-db"
-database_id = "3144c252-7090-4997-8475-49591ca38e8e"  # your real ID
+database_id = "3144c252-7090-4997-8475-49591ca38e8e"
 
 [vars]
 APP_ORIGIN = "https://reader-cloudflare-starter.pages.dev"
-EMAIL_FROM  = "reeeeedbox@gmail.com"
-TURNSTILE_SECRET = ""
+EMAIL_FROM = "reeeeedbox@gmail.com"
