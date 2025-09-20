@@ -1,3 +1,20 @@
+# wrangler.toml
 name = "reader-cloudflare"
-compatibility_date = "2025-09-01"
+main = "functions/[[path]].ts"
 pages_build_output_dir = "public"
+account_id = "..."
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "reader-files"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "reader-db"
+database_id = "..."
+
+[vars]
+APP_ORIGIN = "https://reader-cloudflare-starter.pages.dev"  # <-- set this
+AUTH_SECRET = "<keep your existing long string>"
+EMAIL_FROM = "login@readthem.online"        # or whatever you used
+TURNSTILE_SECRET = ""
