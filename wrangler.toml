@@ -13,6 +13,5 @@ database_id = "3144c252-7090-4997-8475-49591ca38e8e"  # your real ID
 
 [vars]
 APP_ORIGIN = "https://reader-cloudflare-starter.pages.dev"
-AUTH_SECRET = "+waB73pQm6pHSF1MRrtN3B3EPwGz+WQwyD0nGTDOs9ljB8J40rKrfLOECancZNWs"
 EMAIL_FROM  = "reeeeedbox@gmail.com"
 TURNSTILE_SECRET = ""
