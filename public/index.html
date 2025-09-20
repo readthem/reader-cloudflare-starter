@@ -7,13 +7,15 @@
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }
     .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
-    .row { display: flex; gap: 1rem; align-items: center; }
+    .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
     .hidden { display: none; }
     button { padding: .6rem 1rem; border-radius: 10px; border: 1px solid #e5e7eb; cursor: pointer; }
     input[type="email"], input[type="file"] { padding: .6rem; border: 1px solid #e5e7eb; border-radius: 8px; }
     ul { list-style: none; padding: 0; }
     li { padding: .35rem 0; }
     code { background: #f6f7f9; padding: .2rem .4rem; border-radius: 6px; }
+    small { color:#6b7280 }
+    a { text-decoration: none }
   </style>
 </head>
 <body>
@@ -25,7 +27,7 @@
       <input id="email" type="email" placeholder="you@example.com" />
       <button id="btnSend">Send magic link</button>
     </div>
-    <p id="loginMsg"></p>
+    <p id="loginMsg"> </p>
   </section>
 
   <section id="appCard" class="card hidden">
@@ -43,10 +45,17 @@
   </section>
 
 <script>
+const $ = (id) => document.getElementById(id);
+
+function show(view){
+  $('loginCard').classList.toggle('hidden', view !== 'login');
+  $('appCard').classList.toggle('hidden', view !== 'app');
+}
+
 async function sendMagicLink(){
-  const email = document.getElementById('email').value.trim();
+  const email = $('email').value.trim();
   if (!email) return;
-  const msg = document.getElementById('loginMsg');
+  const msg = $('loginMsg');
   msg.textContent = 'Sending...';
   try{
     const res = await fetch('/api/auth/request-link', {
@@ -56,7 +65,7 @@ async function sendMagicLink(){
     });
     const data = await res.json();
     msg.textContent = 'Check your email for the sign-in link.';
-    if (data.link) {
+    if (data && data.link){
       const a = document.createElement('a');
       a.href = data.link;
       a.textContent = ' Or click here to sign in now.';
@@ -66,15 +75,82 @@ async function sendMagicLink(){
     }
   }catch(e){
     msg.textContent = 'Could not send email.';
+    console.error(e);
   }
 }
-<script>
-document.getElementById('btnSend').addEventListener('click', sendMagicLink);
-document.getElementById('email').addEventListener('keydown', e => {
-  if (e.key === 'Enter') sendMagicLink();
-});
-</script>
-  
+
+async function fetchMe(){
+  const r = await fetch('/api/me', { headers:{'accept':'application/json'} });
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+function renderList(items){
+  const ul = $('library');
+  ul.innerHTML = '';
+  if (!items || !items.length){
+    ul.innerHTML = '<li><small>No books yet. Upload an EPUB or PDF.</small></li>';
+    return;
+  }
+  items.forEach(b => {
+    const li = document.createElement('li');
+    const title = b.title || 'Untitled';
+    const openHref = `/read.html?id=${b.id}&type=${b.type}`;
+    li.innerHTML =
+      `<a href="${openHref}"><strong>${title}</strong></a> ` +
+      `<code>[${b.type}]</code> ` +
+      (b.author ? `<small>${b.author}</small> ` : '') +
+      `— <a href="/api/books/${b.id}/file" target="_blank" rel="noopener">Open direct</a>`;
+    ul.appendChild(li);
+  });
+}
+
+async function refresh(){
+  try{
+    const me = await fetchMe();
+    if (!me){ show('login'); return; }
+    $('who').textContent = me.email || '';
+    renderList(me.items || []);
+    show('app');
+  }catch(e){
+    console.error(e);
+    show('login');
+  }
+}
+
+async function upload(){
+  const files = $('file').files;
+  if (!files || !files.length) return;
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f, f.name);
+  const btn = $('btnUpload');
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+  try{
+    const r = await fetch('/api/upload', { method:'POST', body: fd });
+    if (!r.ok) throw new Error('upload failed');
+    await refresh();
+    $('file').value = '';
+  }catch(e){
+    alert('Upload failed. See console.'); console.error(e);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Upload';
+  }
+}
+
+async function signOut(){
+  try{ await fetch('/api/auth/signout', { method:'POST' }); }catch{}
+  show('login');
+}
+
+$('btnSend').addEventListener('click', sendMagicLink);
+$('email').addEventListener('keydown', e => { if (e.key === 'Enter') sendMagicLink(); });
+$('btnRefresh').addEventListener('click', refresh);
+$('btnUpload').addEventListener('click', upload);
+$('btnSignOut').addEventListener('click', signOut);
+
+// Try to show the right view on load
+refresh();
 </script>
 </body>
 </html>
