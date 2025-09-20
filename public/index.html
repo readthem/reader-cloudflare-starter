@@ -5,101 +5,206 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Reader Cloudflare Starter</title>
   <style>
+    :root { --b:#e5e7eb; --r:12px; --pad:1rem; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
+    .card { border: 1px solid var(--b); border-radius: var(--r); padding: var(--pad); margin: 1rem 0; }
     .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
     .hidden { display: none; }
-    button { padding: .6rem 1rem; border-radius: 10px; border: 1px solid #e5e7eb; cursor: pointer; }
-    input[type="email"], input[type="file"] { padding: .6rem; border: 1px solid #e5e7eb; border-radius: 8px; }
+    button { padding: .6rem 1rem; border-radius: 10px; border: 1px solid var(--b); cursor: pointer; }
+    input[type="email"], input[type="file"] { padding: .6rem; border: 1px solid var(--b); border-radius: 8px; }
     ul { list-style: none; padding: 0; }
     li { padding: .35rem 0; }
     code { background: #f6f7f9; padding: .2rem .4rem; border-radius: 6px; }
-    small { color:#6b7280 }
-    a { text-decoration: none }
   </style>
 </head>
 <body>
   <h1>Reader Cloudflare Starter</h1>
 
+  <!-- Login card -->
   <section id="loginCard" class="card">
     <h3>Login</h3>
     <div class="row">
       <input id="email" type="email" placeholder="you@example.com" />
-      <button id="btnSend" type="button" onclick="sendMagicLink()">Send magic link</button>
+      <button id="btnSend">Send magic link</button>
     </div>
     <p id="loginMsg"></p>
   </section>
 
+  <!-- App card -->
   <section id="appCard" class="card hidden">
     <div class="row">
       <div>Signed in as <strong id="who"></strong></div>
-      <button id="btnRefresh" type="button" onclick="refresh()">Refresh Library</button>
-      <button id="btnSignOut" type="button" onclick="signOut()">Sign out</button>
+      <button id="btnRefresh">Refresh Library</button>
+      <button id="btnSignOut">Sign out</button>
     </div>
+
     <div class="row">
       <input id="file" type="file" multiple />
-      <button id="btnUpload" type="button" onclick="upload()">Upload</button>
+      <button id="btnUpload">Upload</button>
     </div>
+    <p id="uploadMsg"></p>
+
     <h3>Your Library</h3>
     <ul id="library"></ul>
   </section>
 
 <script>
-const $ = id => document.getElementById(id);
-function show(v){ $('loginCard').classList.toggle('hidden', v!=='login'); $('appCard').classList.toggle('hidden', v!=='app'); }
+/* ---------- small helpers ---------- */
+async function getJSON(url, opts={}) {
+  const r = await fetch(url, { credentials:'include', ...opts });
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+}
+async function getText(url, opts={}) {
+  const r = await fetch(url, { credentials:'include', ...opts });
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.text();
+}
+async function getMe() {
+  try {
+    const r = await fetch('/api/me', { credentials:'include' });
+    if (!r.ok) return null;
+    const t = await r.text();
+    try {
+      const j = JSON.parse(t);
+      // support {"user":{...}} or plain user
+      return j.user || j;
+    } catch {
+      return null;
+    }
+  } catch { return null; }
+}
 
+/* ---------- auth UI ---------- */
 async function sendMagicLink(){
-  const email = $('email').value.trim();
+  const email = document.getElementById('email').value.trim();
   if (!email) return;
-  const msg = $('loginMsg');
-  msg.textContent = 'Sending...';
+  const msg = document.getElementById('loginMsg');
+  msg.textContent = 'Sending…';
+
   try{
-    const res = await fetch('/api/auth/request-link', {
-      method:'POST', headers:{'content-type':'application/json'},
+    const r = await fetch('/api/auth/request-link', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      credentials:'include',
       body: JSON.stringify({ email })
     });
-    const raw = await res.text();
-    let data = null; try { data = JSON.parse(raw); } catch {}
-    const match = raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i);
-    const link = (data && data.link) ? data.link : (match ? match[0] : null);
-
-    if (link){
-      msg.textContent = 'Check your email for the sign-in link.';
-      const a = document.createElement('a');
-      a.href = link; a.rel='noopener'; a.textContent = ' Or click here to sign in now.'; a.style.marginLeft='6px';
-      msg.appendChild(a);
+    const raw = await r.text();
+    let link;
+    try { link = JSON.parse(raw).link; } catch {}
+    if (!link) {
+      const m = raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i);
+      if (m) link = m[0];
+    }
+    if (link) {
+      msg.textContent = 'Link created. Finishing sign-in…';
+      const r2 = await fetch(link, { redirect:'manual', credentials:'include' });
+      // now we should have a cookie
+      await init(); // reload UI
     } else {
-      msg.textContent = 'Could not send email.';
-      console.error('request-link response:', res.status, raw);
+      msg.textContent = 'Server did not return a link.';
+      console.log('RAW:', raw);
     }
   }catch(e){
-    msg.textContent = 'Could not send email.'; console.error(e);
+    msg.textContent = `Could not send email: ${e.message}`;
   }
 }
 
-async function fetchMe(){ const r=await fetch('/api/me',{headers:{accept:'application/json'}}); if(!r.ok) return null; return r.json(); }
-function renderList(items){
-  const ul=$('library'); ul.innerHTML='';
-  if(!items||!items.length){ ul.innerHTML='<li><small>No books yet. Upload an EPUB or PDF.</small></li>'; return; }
-  for(const b of items){
-    const li=document.createElement('li');
-    const open=`/read.html?id=${b.id}&type=${b.type}`;
-    li.innerHTML = `<a href="${open}"><strong>${b.title||'Untitled'}</strong></a> <code>[${b.type}]</code> `
-      + (b.author?`<small>${b.author}</small> `:'')
-      + `— <a href="/api/books/${b.id}/file" target="_blank" rel="noopener">Open direct</a>`;
-    ul.appendChild(li);
+async function signOut() {
+  try { await fetch('/api/auth/signout', { method:'POST', credentials:'include' }); } catch {}
+  location.reload();
+}
+
+/* ---------- library ---------- */
+async function refreshLibrary() {
+  const ul = document.getElementById('library');
+  ul.textContent = 'Loading…';
+  try {
+    // Our list endpoint below:
+    const data = await getJSON('/api/books');
+    const items = data.items || data.books || data;
+    ul.textContent = '';
+    if (!items || !items.length) {
+      ul.textContent = 'No books yet. Upload an EPUB or PDF.';
+      return;
+    }
+    for (const b of items) {
+      const li = document.createElement('li');
+      const title = b.title || b.id;
+      const kind = (b.type || '').toUpperCase();
+      li.textContent = `${title}${kind ? ' • ' + kind : ''}`;
+      ul.appendChild(li);
+    }
+  } catch (e) {
+    ul.textContent = `Could not load library: ${e.message}`;
   }
 }
-async function refresh(){ try{ const me=await fetchMe(); if(!me){ show('login'); return; } $('who').textContent=me.email||''; renderList(me.items||[]); show('app'); }catch{ show('login'); } }
-async function upload(){
-  const files=$('file').files; if(!files||!files.length) return;
-  const fd=new FormData(); for(const f of files) fd.append('files', f, f.name);
-  const btn=$('btnUpload'); btn.disabled=true; btn.textContent='Uploading...';
-  try{ const r=await fetch('/api/upload',{method:'POST',body:fd}); if(!r.ok) throw 0; await refresh(); $('file').value=''; }
-  catch{ alert('Upload failed'); } finally{ btn.disabled=false; btn.textContent='Upload'; }
+
+function inferExtFromType(t) {
+  t = (t || '').toLowerCase();
+  if (t.includes('pdf')) return 'pdf';
+  if (t.includes('epub')) return 'epub';
+  return null;
 }
-async function signOut(){ try{ await fetch('/api/auth/signout',{method:'POST'});}catch{} show('login'); }
-refresh(); // on load
+
+async function uploadSelected() {
+  const input = document.getElementById('file');
+  const btn = document.getElementById('btnUpload');
+  const msg = document.getElementById('uploadMsg');
+
+  if (!input.files || !input.files.length) { alert('Pick a file first'); return; }
+
+  btn.disabled = true; btn.textContent = 'Uploading…'; msg.textContent = '';
+
+  try {
+    for (const f of input.files) {
+      const fd = new FormData();
+      fd.append('files', f, f.name); // preserve filename
+
+      const r = await fetch('/api/upload', {
+        method:'POST',
+        body: fd,
+        credentials:'include',
+      });
+
+      const text = await r.text();
+      if (!r.ok) throw new Error(text || `${r.status} Upload failed`);
+      console.log('Upload result:', text);
+    }
+    msg.textContent = 'Upload complete.';
+    await refreshLibrary();
+  } catch (e) {
+    console.error(e);
+    msg.textContent = `Upload failed: ${e.message}`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload';
+  }
+}
+
+/* ---------- boot ---------- */
+async function init() {
+  const me = await getMe();
+  const loginCard = document.getElementById('loginCard');
+  const appCard   = document.getElementById('appCard');
+
+  if (me && me.email) {
+    loginCard.classList.add('hidden');
+    appCard.classList.remove('hidden');
+    document.getElementById('who').textContent = me.email;
+    await refreshLibrary();
+  } else {
+    appCard.classList.add('hidden');
+    loginCard.classList.remove('hidden');
+  }
+}
+
+// wire events
+document.getElementById('btnSend')?.addEventListener('click', sendMagicLink);
+document.getElementById('btnUpload')?.addEventListener('click', uploadSelected);
+document.getElementById('btnRefresh')?.addEventListener('click', refreshLibrary);
+document.getElementById('btnSignOut')?.addEventListener('click', signOut);
+
+init();
 </script>
 </body>
 </html>
