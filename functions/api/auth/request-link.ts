@@ -1,115 +1,34 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Reader Cloudflare Starter</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
-    .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
-    .hidden { display: none; }
-    button { padding: .6rem 1rem; border-radius: 10px; border: 1px solid #e5e7eb; cursor: pointer; }
-    input[type="email"], input[type="file"] { padding: .6rem; border: 1px solid #e5e7eb; border-radius: 8px; }
-    ul { list-style: none; padding: 0; }
-    li { padding: .35rem 0; }
-    code { background: #f6f7f9; padding: .2rem .4rem; border-radius: 6px; }
-    small { color:#6b7280 }
-    a { text-decoration: none }
-  </style>
-</head>
-<body>
-  <h1>Reader Cloudflare Starter</h1>
+import type { Env } from '../../_lib/env';
+import { json, badRequest } from '../../_lib/responses';
+import { upsertUser, makeMagicToken } from '../../_lib/auth';
+import { sendMailWithMailChannels } from '../../_lib/mail';
 
-  <section id="loginCard" class="card">
-    <h3>Login</h3>
-    <div class="row">
-      <input id="email" type="email" placeholder="you@example.com" />
-      <button id="btnSend">Send magic link</button>
-    </div>
-    <p id="loginMsg"></p>
-  </section>
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  // 1) Read email safely
+  let email: string | undefined;
+  try {
+    const body = await request.json() as any;
+    if (typeof body?.email === 'string') email = body.email.trim().toLowerCase();
+  } catch {}
+  if (!email) return badRequest('email required');
 
-  <section id="appCard" class="card hidden">
-    <div class="row">
-      <div>Signed in as <strong id="who"></strong></div>
-      <button id="btnRefresh">Refresh Library</button>
-      <button id="btnSignOut">Sign out</button>
-    </div>
-    <div class="row">
-      <input id="file" type="file" multiple />
-      <button id="btnUpload">Upload</button>
-    </div>
-    <h3>Your Library</h3>
-    <ul id="library"></ul>
-  </section>
+  // 2) Upsert user and mint a 10-minute token
+  const userId = await upsertUser(env.DB, email);
+  const token = await makeMagicToken(env.AUTH_SECRET, userId, 10 * 60);
 
-<script>
-const $ = id => document.getElementById(id);
-function show(view){ $('loginCard').classList.toggle('hidden', view!=='login'); $('appCard').classList.toggle('hidden', view!=='app'); }
+  // 3) Build link from the current deployment origin (works for Preview & Prod)
+  const origin = new URL(request.url).origin;
+  const base = env.APP_ORIGIN?.startsWith('http') ? env.APP_ORIGIN : origin;
+  const link = `${base}/api/auth/exchange?t=${encodeURIComponent(token)}`;
 
-async function sendMagicLink(){
-  const email = $('email').value.trim();
-  if (!email) return;
-  const msg = $('loginMsg');
-  msg.textContent = 'Sending...';
-  try{
-    const res = await fetch('/api/auth/request-link', {
-      method:'POST',
-      headers:{'content-type':'application/json'},
-      body: JSON.stringify({ email })
-    });
-
-    const raw = await res.text();
-    let data = null;
-    try { data = JSON.parse(raw); } catch {}
-
-    // Prefer JSON {link}; otherwise try to find the link in raw text
-    const match = raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i);
-    const link = (data && data.link) ? data.link : (match ? match[0] : null);
-
-    if (link){
-      msg.textContent = 'Check your email for the sign-in link.';
-      const a = document.createElement('a');
-      a.href = link;
-      a.textContent = ' Or click here to sign in now.';
-      a.style.marginLeft = '6px';
-      a.rel = 'noopener';
-      msg.appendChild(a);
-    }else{
-      msg.textContent = `Could not send email.`;
-      console.error('request-link response:', res.status, raw);
-    }
-  }catch(e){
-    msg.textContent = 'Could not send email.';
-    console.error(e);
+  // 4) Try to send email (ok if it fails during setup)
+  try {
+    const html = `<p>Sign in to Reader:</p><p><a href="${link}">${link}</a></p><p>This link expires in 10 minutes.</p>`;
+    await sendMailWithMailChannels(env, email, 'Your sign-in link', html);
+  } catch (err) {
+    console.log('Mail send failed (ok during setup):', err);
   }
-}
 
-async function fetchMe(){ const r = await fetch('/api/me',{headers:{accept:'application/json'}}); if(!r.ok) return null; return r.json(); }
-function renderList(items){
-  const ul=$('library'); ul.innerHTML='';
-  if(!items||!items.length){ ul.innerHTML='<li><small>No books yet. Upload an EPUB or PDF.</small></li>'; return; }
-  for(const b of items){
-    const li=document.createElement('li');
-    const title=b.title||'Untitled';
-    const openHref=`/read.html?id=${b.id}&type=${b.type}`;
-    li.innerHTML = `<a href="${openHref}"><strong>${title}</strong></a> <code>[${b.type}]</code> `
-      + (b.author?`<small>${b.author}</small> `:'')
-      + `— <a href="/api/books/${b.id}/file" target="_blank" rel="noopener">Open direct</a>`;
-    ul.appendChild(li);
-  }
-}
-async function refresh(){ try{ const me=await fetchMe(); if(!me){ show('login'); return; } $('who').textContent=me.email||''; renderList(me.items||[]); show('app'); }catch{ show('login'); } }
-async function upload(){
-  const files=$('file').files; if(!files||!files.length) return;
-  const fd=new FormData(); for(const f of files) fd.append('files', f, f.name);
-  const btn=$('btnUpload'); btn.disabled=true; btn.textContent='Uploading...';
-  try{ const r=await fetch('/api/upload',{method:'POST',body:fd}); if(!r.ok) throw 0; await refresh(); $('file').value=''; }
-  catch{ alert('Upload failed'); } finally{ btn.disabled=false; btn.textContent='Upload'; }
-}
-async function signOut(){ try{ await fetch('/api/auth/signout',{method:'POST'});}catch{} show('login'); }
-
-$('btnSend').addEventListener('click', sendMagicLink);
-$('email').addEventListener('keydown', e => { if(e.key==='Enter') sendMagicLink(); });
-$('btnRefresh').addEv
+  // 5) Always return the link for inline sign-in
+  return json({ ok: true, link });
+};
