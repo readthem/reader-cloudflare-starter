@@ -1,4 +1,3 @@
-cat > functions/api/upload.ts <<'TS'
 // functions/api/upload.ts
 import type { Env } from '../_lib/env';
 import { json, badRequest, unauthorized } from '../_lib/responses';
@@ -7,7 +6,7 @@ import { requireUser } from '../_lib/auth';
 function inferExtFromType(t?: string | null) {
   t = (t || '').toLowerCase();
   if (t.includes('pdf')) return 'pdf';
-  if (t.includes('epub')) return 'epub'; // application/epub+zip
+  if (t.includes('epub')) return 'epub';
   return '';
 }
 
@@ -53,4 +52,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({ ok: true, id: bookId, key, type, title });
 };
-TS
