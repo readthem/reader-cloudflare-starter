@@ -1,0 +1,16 @@
+{
+  "name": "reader-cloudflare-starter",
+  "version": "1.0.0",
+  "description": "This starter gives you: - Passwordless **magic-link** login (MailChannels) - **D1** database for users/sessions/library/reading/annotations - **R2** for file storage (EPUB/PDF uploads) - Minimal **Pages Functions** API - Simple frontend (`public/index.html`) to log in and upload",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@simplewebauthn/server": "^13.2.1",
+    "@simplewebauthn/types": "^12.0.0"
+  }
+}
