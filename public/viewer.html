@@ -1,11 +1,10 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Reader</title>
 
-  <!-- ====== Core theme vars + layout ====== -->
   <style>
     :root{
       --bg:#fff; --fg:#111; --muted:#666; --accent:#800020;
@@ -21,9 +20,11 @@
     html,body{min-height:100%}
     body{margin:0;background:var(--bg);color:var(--fg);font:var(--base)/1.6 var(--reader-font);overflow-x:hidden}
 
-    .topbar{position:fixed;top:0;left:0;right:0;z-index:50;background:#fff;backdrop-filter:none;border-bottom:1px solid #e6e6e6;font-size:var(--ui)}
+    .topbar{position:fixed;top:0;left:0;right:0;z-index:50;background:#fff;border-bottom:1px solid #e6e6e6;font-size:var(--ui)}
     :root[data-theme="dark"] .topbar{background:#000;border-bottom-color:#2a2a2a}
-    .topbar-inner{display:flex;align-items:center;gap:12px;padding:10px 20px;padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}
+    .topbar-inner{display:flex;align-items:center;gap:12px;padding:10px 20px;
+      padding-left:calc(20px + env(safe-area-inset-left));
+      padding-right:calc(20px + env(safe-area-inset-right))}
     .title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
     .icons{display:flex;gap:10px}
     .icon-btn{width:32px;height:32px;display:grid;place-items:center;border:none;background:none;color:var(--fg);cursor:pointer;border-radius:8px}
@@ -91,7 +92,9 @@
     .drawer-open #topDrawer{transform:translateY(0);pointer-events:auto}
     #topDrawer .drawer-bg{position:absolute;inset:0;background:#fff;border-bottom:1px solid #e6e6e6}
     :root[data-theme="dark"] #topDrawer .drawer-bg{background:#000;border-bottom-color:#2a2a2a}
-    #topDrawer .drawer-inner{position:relative;height:100%;display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:12px 20px;padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right));font-size:70%;line-height:1.0;color:var(--fg)}
+    #topDrawer .drawer-inner{position:relative;height:100%;display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:12px 20px;
+      padding-left:calc(20px + env(safe-area-inset-left));
+      padding-right:calc(20px + env(safe-area-inset-right));font-size:70%;line-height:1.0;color:var(--fg)}
     #topDrawer .col{overflow:auto}
     #drawerTOC{opacity:1;display:block;font-family:var(--reader-font);line-height:1.6;color:var(--fg)}
     #drawerTOC .toc-scroll{height:100%;overflow:auto;padding-right:6px}
@@ -113,7 +116,6 @@
     :root[data-theme="dark"] .drawer-item .del:hover{background:rgba(255,255,255,.08)}
     .drawer-item .del svg{width:16px;height:16px}
 
-    /* Align drawer columns fully */
     #topDrawer .col{height:100% !important;overflow:hidden}
     #drawerAnno{display:flex;flex-direction:column;height:100%}
     #drawerAnno .drawer-controls{flex:0 0 auto}
@@ -126,7 +128,7 @@
 </head>
 <body>
 
-<!-- Sprite icons -->
+<!-- Icons -->
 <svg aria-hidden="true" width="0" height="0" style="position:absolute">
   <symbol id="i-sliders" viewBox="0 0 24 24">
     <g class="icon-stroke">
@@ -224,10 +226,10 @@
 <!-- Viewer -->
 <div class="viewer-wrap"><article id="viewer"></article></div>
 
-<!-- ====== Reader core (progress, settings, bookmarks, theme) ====== -->
+<!-- ====== Reader core (theme, settings, progress bar) ====== -->
 <script>
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-  const state={theme:'auto',fontFamily:'sans',fontSizePx:27,currentBook:{id:'',title:'',bookmarks:[],lastPercent:0},settingsOpen:false};
+  const state={theme:'auto',fontFamily:'sans',fontSizePx:27,currentBook:{id:'',title:'',author:'',bookmarks:[],lastPercent:0},settingsOpen:false};
 
   function setTheme(mode){
     state.theme=mode;
@@ -248,7 +250,7 @@
     document.body.style.paddingTop = (top + 10) + 'px';
   }
   window.addEventListener('resize', adjustBodyOffset);
-  adjustBodyOffset();
+  document.addEventListener('DOMContentLoaded', adjustBodyOffset);
 
   function getScrollPercent(){
     const sc=document.documentElement.scrollTop||document.body.scrollTop;
@@ -292,14 +294,27 @@
     if(e.target.closest('#settingsBtn')) toggleSettings(true);
     if(e.target.closest('#fontPlus')){ state.fontSizePx++; document.documentElement.style.setProperty('--base', state.fontSizePx+'px'); bumpSettingsIdle(); }
     if(e.target.closest('#fontMinus')){ state.fontSizePx--; document.documentElement.style.setProperty('--base', state.fontSizePx+'px'); bumpSettingsIdle(); }
-    if(e.target.closest('#fontCycle')){ const order=['sans','georgia','serif']; const i=order.indexOf(state.fontFamily); state.fontFamily=order[(i+1)%order.length]; let f='serif'; if(state.fontFamily==='sans') f='ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"'; if(state.fontFamily==='georgia') f='Georgia, serif'; document.documentElement.style.setProperty('--reader-font',f); bumpSettingsIdle(); }
+    if(e.target.closest('#fontCycle')){
+      const order=['sans','georgia','serif'];
+      const i=order.indexOf(state.fontFamily);
+      state.fontFamily=order[(i+1)%order.length];
+      let f='serif';
+      if(state.fontFamily==='sans') f='ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"';
+      if(state.fontFamily==='georgia') f='Georgia, serif';
+      document.documentElement.style.setProperty('--reader-font',f); bumpSettingsIdle();
+    }
     if(e.target.closest('#themeToggle')){ const next=state.theme==='auto'?'dark':(state.theme==='dark'?'light':'auto'); setTheme(next); bumpSettingsIdle(); }
-    if(e.target.closest('#refreshBtn')){ state.fontFamily='sans'; document.documentElement.style.setProperty('--reader-font','ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"'); state.fontSizePx=27; document.documentElement.style.setProperty('--base','27px'); setTheme('auto'); bumpSettingsIdle(); }
+    if(e.target.closest('#refreshBtn')){
+      state.fontFamily='sans';
+      document.documentElement.style.setProperty('--reader-font','ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"');
+      state.fontSizePx=27; document.documentElement.style.setProperty('--base','27px');
+      setTheme('auto'); bumpSettingsIdle();
+    }
   });
   setTheme('auto');
 </script>
 
-<!-- ====== Annotate (highlights/underline) ====== -->
+<!-- ====== Annotate (highlights/underline) with server save ====== -->
 <script>
 (function(){
   'use strict';
@@ -419,44 +434,146 @@
     }
     target.classList.add('gloss');
   }
-  function applyHighlight(color){
-    if(editTarget){
-      const gid=editGroupId||getGroupId(editTarget);
-      if(gid){
-        const els = byGroup('span.hl',gid); if(els.length){ els.forEach(el=>applyColorToTarget(el,color)); }
-        else { byGroup('span.gloss',gid).forEach(el=>applyColorToTarget(el,color)); }
-      }else{ applyColorToTarget(editTarget,color); }
-      mergeAdjacent('span.hl'); hideAnnotate(); return;
-    }
-    if(!selRange) return;
-    const r=selRange.cloneRange();
-    removeOverlappingHighlights(r);
-    const gid=newAnnotId();
-    wrapRange(r, 'hl hl-'+color, gid);
-    mergeAdjacent('span.hl'); hideAnnotate();
+
+  // --- Server calls for annotations ---
+  async function saveAnnotationToServer(action, payload){
+    try{
+      if(action==='delete'){
+        const id = payload && payload.id;
+        if(id) await fetch(`/api/annotations/${encodeURIComponent(id)}`, {method:'DELETE', credentials:'include'});
+        return;
+      }
+      await fetch('/api/annotations', {
+        method:'POST', credentials:'include',
+        headers:{'content-type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+    }catch{}
   }
-  function applyUnderline(){
-    if(editTarget){
-      const gid=editGroupId||getGroupId(editTarget);
-      if(gid){
-        const els = byGroup('span.hl',gid); if(els.length){ els.forEach(applyUnderlineToTarget); }
-        else { byGroup('span.gloss',gid).forEach(applyUnderlineToTarget); }
-      }else{ applyUnderlineToTarget(editTarget); }
-      mergeAdjacent('span.hl'); hideAnnotate(); return;
+
+  function applyHighlight(color){
+    const ctxFrom = (rangeOrEl)=>{
+      let node = rangeOrEl?.commonAncestorContainer || rangeOrEl;
+      if (node && node.nodeType !== 1) node = node.parentElement;
+      const sec = node && node.closest && node.closest('section[data-src]');
+      const section = sec ? sec.getAttribute('data-src') : null;
+      const snippet =
+        (rangeOrEl && rangeOrEl.toString && rangeOrEl.toString().slice(0,500)) ||
+        (node && node.textContent && node.textContent.slice(0,500)) || '';
+      return { section, snippet };
+    };
+
+    if (editTarget){
+      const gid = editGroupId || getGroupId(editTarget);
+      const wasSameColor = editTarget.classList.contains('hl-'+color);
+
+      if (gid){
+        const els = byGroup('span.hl', gid);
+        if (els.length){ els.forEach(el => applyColorToTarget(el, color)); }
+        else { byGroup('span.gloss', gid).forEach(el => applyColorToTarget(el, color)); }
+      } else {
+        applyColorToTarget(editTarget, color);
+      }
+
+      mergeAdjacent('span.hl');
+
+      if (wasSameColor) {
+        saveAnnotationToServer('delete', { id: gid });
+      } else {
+        const { section, snippet } = ctxFrom(editTarget);
+        saveAnnotationToServer('upsert', {
+          id: gid, bookId: state.currentBook.id, kind: 'hl', color,
+          payload: { section, percent: state.currentBook.lastPercent || 0, snippet }
+        });
+      }
+      hideAnnotate();
+      return;
     }
-    if(!selRange) return;
+
+    if (!selRange) return;
+    const r = selRange.cloneRange();
+    removeOverlappingHighlights(r);
+    const gid = newAnnotId();
+    wrapRange(r, 'hl hl-'+color, gid);
+    mergeAdjacent('span.hl');
+
+    const node = r.commonAncestorContainer.nodeType===1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+    const sec = node && node.closest && node.closest('section[data-src]');
+    const section = sec ? sec.getAttribute('data-src') : null;
+
+    saveAnnotationToServer('upsert', {
+      id: gid, bookId: state.currentBook.id, kind: 'hl', color,
+      payload: { section, percent: state.currentBook.lastPercent || 0, snippet: r.toString().slice(0,500) }
+    });
+
+    hideAnnotate();
+  }
+
+  function applyUnderline(){
+    const ctxFrom = (rangeOrEl)=>{
+      let node = rangeOrEl?.commonAncestorContainer || rangeOrEl;
+      if (node && node.nodeType !== 1) node = node.parentElement;
+      const sec = node && node.closest && node.closest('section[data-src]');
+      const section = sec ? sec.getAttribute('data-src') : null;
+      const snippet =
+        (rangeOrEl && rangeOrEl.toString && rangeOrEl.toString().slice(0,500)) ||
+        (node && node.textContent && node.textContent.slice(0,500)) || '';
+      return { section, snippet };
+    };
+
+    if (editTarget){
+      const gid = editGroupId || getGroupId(editTarget);
+      const wasGloss = editTarget.classList.contains('gloss');
+
+      if (gid){
+        const els = byGroup('span.hl', gid);
+        if (els.length){ els.forEach(applyUnderlineToTarget); }
+        else { byGroup('span.gloss', gid).forEach(applyUnderlineToTarget); }
+      } else {
+        applyUnderlineToTarget(editTarget);
+      }
+      mergeAdjacent('span.hl');
+
+      if (wasGloss) {
+        saveAnnotationToServer('delete', { id: gid });
+      } else {
+        const { section, snippet } = ctxFrom(editTarget);
+        saveAnnotationToServer('upsert', {
+          id: gid, bookId: state.currentBook.id, kind: 'gloss',
+          payload: { section, percent: state.currentBook.lastPercent || 0, snippet }
+        });
+      }
+      hideAnnotate();
+      return;
+    }
+
+    if (!selRange) return;
     const containingHl = (function(){
-      const node = selRange.commonAncestorContainer.nodeType===1 ? selRange.commonAncestorContainer : selRange.commonAncestorContainer.parentElement;
+      const node = selRange.commonAncestorContainer.nodeType===1
+        ? selRange.commonAncestorContainer
+        : selRange.commonAncestorContainer.parentElement;
       return node && node.closest && node.closest('span.hl');
     })();
-    if(containingHl){
-      const gid=getGroupId(containingHl);
-      if(gid){ byGroup('span.hl',gid).forEach(applyUnderlineToTarget); }
+
+    if (containingHl){
+      const gid = getGroupId(containingHl);
+      if (gid){ byGroup('span.hl', gid).forEach(applyUnderlineToTarget); }
       else { applyUnderlineToTarget(containingHl); }
-      mergeAdjacent('span.hl'); hideAnnotate(); return;
+      mergeAdjacent('span.hl');
+      hideAnnotate();
+      return;
     }
-    const gid=newAnnotId(); wrapRange(selRange,'gloss',gid); hideAnnotate();
+
+    const gid = newAnnotId();
+    wrapRange(selRange, 'gloss', gid);
+    const { section, snippet } = ctxFrom(selRange);
+    saveAnnotationToServer('upsert', {
+      id: gid, bookId: state.currentBook.id, kind: 'gloss',
+      payload: { section, percent: state.currentBook.lastPercent || 0, snippet }
+    });
+    hideAnnotate();
   }
+
   annotateIcons.addEventListener('click', e=>{
     const btn=e.target.closest('button.icon-btn'); if(!btn) return;
     const color=btn.getAttribute('data-hl'); if(color){ applyHighlight(color); return; }
@@ -528,7 +645,7 @@
         ev.stopPropagation();
         if(g.kind==='note'){ g.els.forEach(el=>el.remove()); }
         else if(g.kind==='hl'){ g.els.forEach(el=>{ el.classList.remove('hl','hl-y','hl-g','hl-b','hl-pk','hl-p'); if(!el.classList.length){ const p=el.parentNode; while(el.firstChild) p.insertBefore(el.firstChild,el); el.remove(); } }); }
-        else { g.els.forEach(el=>{ el.classList.remove('gloss'); if(!/\\bhl\\b/.test(el.className)){ const p=el.parentNode; while(el.firstChild) p.insertBefore(el.firstChild,el); el.remove(); } }); }
+        else { g.els.forEach(el=>{ el.classList.remove('gloss'); if(!/\bhl\b/.test(el.className)){ const p=el.parentNode; while(el.firstChild) p.insertBefore(el.firstChild,el); el.remove(); } }); }
         rebuildList();
       });
       li.appendChild(content); li.appendChild(del); drawerList.appendChild(li);
@@ -556,9 +673,9 @@
   function ensureId(el,prefix){ if(el.id && el.id.length) return el.id; const id=(prefix||'h')+'-'+Math.random().toString(36).slice(2); el.id=id; return id; }
   function collect(){
     const hs=[...viewer.querySelectorAll('h1,h2,h3,h4,h5,h6')];
-    if(hs.length) return hs.map(h=>({el:h,id:ensureId(h,'h'),text:(h.textContent||'').trim().replace(/\\s+/g,' ').slice(0,160), level:Math.min(6,Math.max(1,parseInt(h.tagName[1],10)||2))}));
+    if(hs.length) return hs.map(h=>({el:h,id:ensureId(h,'h'),text:(h.textContent||'').trim().replace(/\s+/g,' ').slice(0,160), level:Math.min(6,Math.max(1,parseInt(h.tagName[1],10)||2))}));
     const secs=[...viewer.querySelectorAll('section[data-chapter]')];
-    if(secs.length) return secs.map((sec,i)=>({el:sec,id:ensureId(sec,'sec'),text:(sec.textContent||'').trim().replace(/\\s+/g,' ').slice(0,160)||('Chapter '+(i+1)),level:2}));
+    if(secs.length) return secs.map((sec,i)=>({el:sec,id:ensureId(sec,'sec'),text:(sec.textContent||'').trim().replace(/\s+/g,' ').slice(0,160)||('Chapter '+(i+1)),level:2}));
     return [{el:viewer,id:ensureId(viewer,'doc'),text:'Start',level:1}];
   }
   function build(){
@@ -583,7 +700,7 @@
 })();
 </script>
 
-<!-- ====== EPUB loader (from blob) + server integration ====== -->
+<!-- ====== EPUB loader + server integration ====== -->
 <script>
 async function extractEpubMetaFromBlob(blob){
   const zip = await JSZip.loadAsync(blob);
@@ -761,9 +878,15 @@ async function loadEPUBFromBlob(blob, item){
 })();
 </script>
 
-<!-- ====== Boot: read ?book or ?href, fetch, open, save progress ====== -->
+<!-- ====== Boot: require login, open ?book or ?href, save progress ====== -->
 <script>
 (async function boot(){
+  // require login (sid cookie)
+  try{
+    const r = await fetch('/api/me', {credentials:'include'});
+    if(r.status===401){ location.href = '/app.html'; return; }
+  }catch{ /* ignore, try anyway */ }
+
   const params=new URLSearchParams(location.search);
   const bookId=params.get('book')||params.get('id')||'';
   const href=params.get('href')||'';
@@ -772,9 +895,9 @@ async function loadEPUBFromBlob(blob, item){
 
   function saveProgress(){
     try{
+      if(!state.currentBook.id) return;
       const payload = JSON.stringify({ bookId: state.currentBook.id, percent: state.currentBook.lastPercent, cfi: null });
       const blob = new Blob([payload], {type:'application/json'});
-      // Try /api/progress (adjust to your final endpoint)
       if(navigator.sendBeacon){
         navigator.sendBeacon('/api/progress', blob);
       }else{
@@ -785,6 +908,19 @@ async function loadEPUBFromBlob(blob, item){
   }
   window.addEventListener('beforeunload', saveProgress);
   window.addEventListener('pagehide', saveProgress);
+
+  async function applySavedProgress(id){
+    let p=null;
+    try{
+      const r = await fetch(`/api/progress?bookId=${encodeURIComponent(id)}`, {credentials:'include'});
+      if(r.ok){ const j = await r.json(); if(j && typeof j.percent==='number') p=j.percent; }
+    }catch{}
+    if(p==null){
+      const s = localStorage.getItem('progress:'+id);
+      if(s!=null) p = parseFloat(s);
+    }
+    if(typeof p==='number' && !isNaN(p)) setTimeout(()=>jumpToPercent(p), 50);
+  }
 
   async function tryFetchBlob(urls){
     for(const u of urls){
@@ -797,13 +933,13 @@ async function loadEPUBFromBlob(blob, item){
   }
 
   async function loadById(id){
-    // 1) get metadata (best-effort)
+    // 1) metadata (best-effort)
     let meta = { id, title: givenTitle, author: givenAuthor, href: '' };
     try{
       const r = await fetch(`/api/books/${encodeURIComponent(id)}`, {credentials:'include'});
       if(r.ok){ const j = await r.json(); meta = {...meta, ...j}; }
     }catch{}
-    // 2) pick a file endpoint (most tolerant)
+    // 2) candidates for file
     const candidates = [];
     if(meta.href) candidates.push(meta.href);
     candidates.push(
@@ -814,7 +950,7 @@ async function loadEPUBFromBlob(blob, item){
       `/api/book/${encodeURIComponent(id)}/download`
     );
     const blob = await tryFetchBlob(candidates);
-    // title/author fallback via EPUB metadata
+    // fill title/author via EPUB if missing
     if(!meta.title || !meta.author){
       try{
         const m = await extractEpubMetaFromBlob(blob);
@@ -823,6 +959,7 @@ async function loadEPUBFromBlob(blob, item){
       }catch{}
     }
     await loadEPUBFromBlob(blob, meta);
+    await applySavedProgress(meta.id);
   }
 
   try{
@@ -833,10 +970,12 @@ async function loadEPUBFromBlob(blob, item){
         try{ const m=await extractEpubMetaFromBlob(blob); meta.title=meta.title||m.title; meta.author=meta.author||m.author; }catch{}
       }
       await loadEPUBFromBlob(blob, meta);
+      await applySavedProgress(meta.id);
     }else if(bookId){
       await loadById(bookId);
     }else{
-      document.getElementById('viewer').innerHTML = '<p style="margin:28px 20px;color:var(--muted)">No book specified. Open with <code>?book=&lt;id&gt;</code> or <code>?href=&lt;epub-url&gt;</code>.</p>';
+      document.getElementById('viewer').innerHTML = '<p style="margin:28px 20px;color:var(--muted)">' +
+        'No book specified. Open with <code>?book=&lt;id&gt;</code> or <code>?href=&lt;epub-url&gt;</code>.</p>';
       document.getElementById('bookTitle').textContent = 'Reader';
     }
   }catch(err){
@@ -850,26 +989,5 @@ async function loadEPUBFromBlob(blob, item){
 })();
 </script>
 
-  <script>
-async function saveAnnotationToServer(action, payload){
-  // action: 'upsert' | 'delete'
-  try{
-    if(action==='delete'){
-      const id = payload && payload.id
-      if(id) await fetch(`/api/annotations/${encodeURIComponent(id)}`, {method:'DELETE', credentials:'include'})
-      return
-    }
-    // upsert
-    await fetch('/api/annotations', {
-      method:'POST', credentials:'include',
-      headers:{'content-type':'application/json'},
-      body: JSON.stringify(payload)
-    })
-  }catch{}
-}
-</script>
-
-  
-  
 </body>
 </html>
