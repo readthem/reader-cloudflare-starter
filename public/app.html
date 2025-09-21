@@ -66,7 +66,7 @@
         li.querySelector('a').addEventListener('click', (e) => {
           e.preventDefault();
           // Open your viewer, pass the book id
-          location.href = `/index.toc.v8.html?book=${encodeURIComponent(b.id)}`;
+          location.href = `/viewer.html?book=${encodeURIComponent(b.id)}`;
         });
         list.appendChild(li);
       }
