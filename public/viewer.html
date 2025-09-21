@@ -850,5 +850,26 @@ async function loadEPUBFromBlob(blob, item){
 })();
 </script>
 
+  <script>
+async function saveAnnotationToServer(action, payload){
+  // action: 'upsert' | 'delete'
+  try{
+    if(action==='delete'){
+      const id = payload && payload.id
+      if(id) await fetch(`/api/annotations/${encodeURIComponent(id)}`, {method:'DELETE', credentials:'include'})
+      return
+    }
+    // upsert
+    await fetch('/api/annotations', {
+      method:'POST', credentials:'include',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify(payload)
+    })
+  }catch{}
+}
+</script>
+
+  
+  
 </body>
 </html>
