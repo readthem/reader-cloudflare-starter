@@ -73,6 +73,7 @@ function renderLibrary(items){
     ul.appendChild(li);
   }
 }
+function shorten(s, n=140){ s = String(s||''); return s.length>n ? s.slice(0,n)+'…' : s; }
 
 /* --------------- UI actions --------------- */
 async function refreshLibrary(){
@@ -117,31 +118,77 @@ async function signOut(){
   location.reload();
 }
 
+/* -------- robust magic-link flow (no hanging) -------- */
 async function sendMagicLink(){
   const email = document.getElementById('email')?.value?.trim();
   const msg = document.getElementById('loginMsg');
+  const btn = document.getElementById('btnSend');
   if (!email) { msg.textContent = 'Enter an email.'; return; }
-  msg.textContent = 'Sending...';
+
+  btn.disabled = true;
+  msg.textContent = 'Sending…';
+
   try{
-    const r = await fetch('/api/auth/request-link', {
+    // Timeout guard so we never hang
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 15000); // 15s
+
+    const r1 = await fetch('/api/auth/request-link', {
       method:'POST',
       headers:{'content-type':'application/json'},
       credentials:'include',
-      body: JSON.stringify({ email })
+      body: JSON.stringify({ email }),
+      signal: ac.signal
     });
-    const raw = await r.text();
-    let link; try { link = JSON.parse(raw).link; } catch {}
+    clearTimeout(timer);
+
+    const raw = await r1.text();
+    if (!r1.ok) {
+      console.log('request-link raw:', raw);
+      msg.textContent = `Server error ${r1.status}. ${shorten(raw)}`;
+      btn.disabled = false;
+      return;
+    }
+
+    // Try JSON first
+    let link = null;
+    try { link = JSON.parse(raw).link; } catch {}
+    // Fallback: try to find it inside HTML
     if (!link) {
       const m = raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i);
       link = m && m[0];
     }
-    if (!link) { msg.textContent = 'Server did not return a link.'; console.log('RAW:', raw); return; }
-    // exchange & set cookie
-    await fetch(link, { redirect:'manual', credentials:'include' });
-    // show app
-    await init();
-  }catch(e){
-    msg.textContent = 'Could not send email: ' + e.message;
+
+    if (!link) {
+      msg.textContent = 'Server did not return a link.';
+      console.log('RAW:', raw);
+      btn.disabled = false;
+      return;
+    }
+
+    // Exchange the token -> set cookie
+    const r2 = await fetch(link, { redirect:'manual', credentials:'include' });
+    // Some setups return 0 on manual redirect; that's fine.
+
+    // Verify session
+    const me = await getMe();
+    if (me && me.email) {
+      msg.textContent = 'Signed in.';
+      await init(); // will show app & library
+      return;
+    } else {
+      msg.innerHTML =
+        'Could not sign in (cookie not set). '+
+        'You can also click this link manually: '+
+        `<a href="${link}" rel="noopener">exchange</a>`;
+      btn.disabled = false;
+      return;
+    }
+  } catch(e){
+    msg.textContent = (e && e.name === 'AbortError')
+      ? 'Timed out contacting the server.'
+      : 'Could not send email: ' + (e?.message || e);
+    btn.disabled = false;
   }
 }
 
