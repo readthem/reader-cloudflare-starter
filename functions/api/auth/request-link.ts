@@ -1,34 +1,63 @@
-import type { Env } from '../../_lib/env';
-import { json, badRequest } from '../../_lib/responses';
-import { upsertUser, makeMagicToken } from '../../_lib/auth';
-import { sendMailWithMailChannels } from '../../_lib/mail';
+// functions/api/auth/request-link.ts
+// Creates a session and returns the magic-link URL in JSON.
+// No email is required; we always return the link so you can click it.
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  // 1) Read email safely
-  let email: string | undefined;
+type UserRow = { id: string } | null;
+
+interface Bindings {
+  DB: D1Database;
+  APP_ORIGIN?: string;
+}
+
+function appOrigin(req: Request, env: Bindings) {
+  const u = new URL(req.url);
+  return (env.APP_ORIGIN || `${u.protocol}//${u.host}`).replace(/\/+$/, "");
+}
+
+export const onRequestPost: PagesFunction<Bindings> = async ({ request, env }) => {
   try {
-    const body = await request.json() as any;
-    if (typeof body?.email === 'string') email = body.email.trim().toLowerCase();
-  } catch {}
-  if (!email) return badRequest('email required');
+    const { email } = await request.json().catch(() => ({} as any));
+    const addr = (email || "").trim().toLowerCase();
+    if (!addr || !addr.includes("@")) {
+      return new Response(JSON.stringify({ ok: false, error: "invalid_email" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
 
-  // 2) Upsert user and mint a 10-minute token
-  const userId = await upsertUser(env.DB, email);
-  const token = await makeMagicToken(env.AUTH_SECRET, userId, 10 * 60);
+    // 1) upsert user
+    let row = (await env.DB.prepare("SELECT id FROM users WHERE email = ?")
+      .bind(addr)
+      .first<UserRow>()) as UserRow;
 
-  // 3) Build link from the current deployment origin (works for Preview & Prod)
-  const origin = new URL(request.url).origin;
-  const base = env.APP_ORIGIN?.startsWith('http') ? env.APP_ORIGIN : origin;
-  const link = `${base}/api/auth/exchange?t=${encodeURIComponent(token)}`;
+    let userId = row?.id;
+    if (!userId) {
+      userId = crypto.randomUUID();
+      await env.DB.prepare("INSERT OR IGNORE INTO users (id, email) VALUES (?, ?)")
+        .bind(userId, addr)
+        .run();
+    }
 
-  // 4) Try to send email (ok if it fails during setup)
-  try {
-    const html = `<p>Sign in to Reader:</p><p><a href="${link}">${link}</a></p><p>This link expires in 10 minutes.</p>`;
-    await sendMailWithMailChannels(env, email, 'Your sign-in link', html);
+    // 2) create session; 1-day expiry (seconds)
+    const sid = crypto.randomUUID();
+    const expires = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
+    await env.DB.prepare(
+      "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)"
+    )
+      .bind(sid, userId, expires)
+      .run();
+
+    // 3) return link (always)
+    const origin = appOrigin(request, env);
+    const link = `${origin}/api/auth/exchange?t=${encodeURIComponent(sid)}`;
+
+    return new Response(JSON.stringify({ ok: true, link }), {
+      headers: { "content-type": "application/json" },
+    });
   } catch (err) {
-    console.log('Mail send failed (ok during setup):', err);
+    return new Response(JSON.stringify({ ok: false, error: "server_error" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
   }
-
-  // 5) Always return the link for inline sign-in
-  return json({ ok: true, link });
 };
