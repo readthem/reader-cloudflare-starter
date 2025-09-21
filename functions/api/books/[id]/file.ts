@@ -13,17 +13,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params, request })
   const row = await env.DB
     .prepare('SELECT r2_key, type FROM books WHERE id = ? AND user_id = ?')
     .bind(id, user.id)
-    .first();
+    .first<{ r2_key: string; type: string }>();
 
   if (!row) return notFound('book not found');
 
-  const obj = await env.R2.get(row.r2_key as string);
-  if (!obj) return notFound('file missing');
+  const obj = await env.R2.get(row.r2_key);
+  if (!obj || !obj.body) return notFound('file missing');
 
   const ct = (row.type === 'pdf') ? 'application/pdf' : 'application/epub+zip';
-  const headers = new Headers({
-    'content-type': ct,
-    'cache-control': 'private, no-store',
+  return new Response(obj.body, {
+    headers: {
+      'content-type': ct,
+      // Serve inline so PDFs open in-browser and EPUBs can be fetched by your viewer
+      'content-disposition': 'inline',
+      'cache-control': 'private, no-store'
+    }
   });
-  return new Response(obj.body, { headers });
 };
