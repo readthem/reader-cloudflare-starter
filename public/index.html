@@ -5,24 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Reader Cloudflare Starter</title>
   <style>
-    :root { --b:#e5e7eb; --r12:12px; --pad:.7rem; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }
-    .card { border: 1px solid var(--b); border-radius: var(--r12); padding: var(--pad); margin: 1rem 0; }
-    .row { display: flex; gap: 1rem; align-items: center; }
-    .hidden { display: none; }
-    button { padding: .6rem 1rem; border-radius: 10px; border: 1px solid var(--b); cursor: pointer; }
-    input[type="email"], input[type="file"] { padding: .6rem; border: 1px solid var(--b); border-radius: 8px; }
-    ul { list-style: none; padding: 0; }
-    li { padding: .35rem 0; }
-    a.book { text-decoration: none; }
-    a.book:hover { text-decoration: underline; }
-    code { background: #f6f7f9; padding: .2rem .4rem; border-radius: 6px; }
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; margin: 2rem; }
+    .card { border:1px solid #e5e7eb; border-radius:12px; padding:1rem; margin:1rem 0; }
+    .row { display:flex; gap:1rem; align-items:center; flex-wrap:wrap; }
+    button,input[type="email"],input[type="file"] { padding:.6rem .9rem; border:1px solid #e5e7eb; border-radius:10px; }
+    ul { list-style:none; padding:0; }
+    li { padding:.45rem 0; }
+    a { color:inherit; text-decoration:underline; }
+    .hidden { display:none; }
   </style>
 </head>
 <body>
   <h1>Reader Cloudflare Starter</h1>
 
-  <!-- Login -->
   <section id="loginCard" class="card">
     <h3>Login</h3>
     <div class="row">
@@ -32,7 +27,6 @@
     <p id="loginMsg"></p>
   </section>
 
-  <!-- App -->
   <section id="appCard" class="card hidden">
     <div class="row">
       <div>Signed in as <strong id="who"></strong></div>
@@ -42,116 +36,106 @@
     <div class="row">
       <input id="file" type="file" multiple />
       <button id="btnUpload">Upload</button>
+      <span id="uploadMsg"></span>
     </div>
-    <p id="uploadMsg"></p>
-
     <h3>Your Library</h3>
     <ul id="library"></ul>
   </section>
 
 <script>
-/* ---------- helpers ---------- */
-function $(id){ return document.getElementById(id); }
+const $ = sel => document.querySelector(sel);
 
-async function getMe() {
-  try {
-    const r = await fetch('/api/me', { credentials: 'include' });
-    if (!r.ok) return null;
-    const t = await r.text();
-    try { return JSON.parse(t); } catch { return null; }
+async function getMe(){
+  try { const r = await fetch('/api/me', { credentials:'include' });
+        if (!r.ok) return null;
+        const t = await r.text(); return JSON.parse(t).user || null;
   } catch { return null; }
 }
 
-async function refreshLibrary() {
-  const ul = $('library');
-  ul.textContent = 'Loading…';
-  try {
-    const r = await fetch('/api/books', { credentials: 'include' });
-    if (!r.ok) throw new Error('failed');
-    const data = await r.json();
-    ul.innerHTML = '';
-    for (const b of (data.items || [])) {
-      const li = document.createElement('li');
-      li.textContent = `${b.title || '(untitled)'} • ${b.type.toUpperCase()}`;
-      li.style.cursor = 'pointer';
-      li.onclick = () => location.href = `/reader?id=${encodeURIComponent(b.id)}`;
-      ul.appendChild(li);
-    }
-    if (!ul.children.length) ul.textContent = 'No books yet. Upload an EPUB or PDF.';
-  } catch (e) {
-    ul.textContent = 'Could not load library.';
-  }
-}
-
-/* ---------- login flows ---------- */
 async function sendMagicLink(){
-  const email = $('email').value.trim();
+  const email = $('#email').value.trim();
   if (!email) return;
-  $('loginMsg').textContent = 'Sending…';
-  try {
+  const msg = $('#loginMsg'); msg.textContent = 'Sending...';
+  try{
     const r = await fetch('/api/auth/request-link', {
       method:'POST',
       headers:{'content-type':'application/json'},
-      body: JSON.stringify({ email }),
-      credentials: 'include',
+      body: JSON.stringify({ email })
     });
-    const { link } = await r.json();
-    if (!link) throw new Error('no link');
-    // Open the exchange link; after it sets the cookie it will bounce back.
-    location.href = link;
-  } catch (e) {
-    $('loginMsg').textContent = 'Could not send email.';
+    const raw = await r.text();
+    let link; try { link = JSON.parse(raw).link; } catch{};
+    if (!link) link = (raw.match(/https?:\/\/[^"']+\/api\/auth\/exchange\?t=[^"'\s<>]+/i)||[])[0];
+
+    if (!link) { msg.textContent = 'Server did not return a link.'; return; }
+
+    // Try to set cookie via fetch (no redirect follow)
+    const ex = await fetch(link, { redirect:'manual', credentials:'include' });
+    if (ex.status === 0 || (ex.status >= 200 && ex.status < 400)) {
+      msg.textContent = 'Signed in.';
+      await init(); return;
+    }
+    msg.textContent = 'Could not sign in (cookie not set). You can also click this link manually: ';
+    const a = document.createElement('a'); a.href = link; a.textContent = 'exchange'; msg.appendChild(a);
+  }catch(e){
+    msg.textContent = 'Could not send email.';
   }
 }
 
-async function signOut(){
-  await fetch('/api/auth/signout', { method:'POST', credentials:'include' }).catch(()=>{});
-  init(); // flip UI back
+async function fetchBooks(){
+  const r = await fetch('/api/books', { credentials:'include' });
+  if (!r.ok) throw new Error('Load failed');
+  return (await r.json()).books || [];
 }
 
-/* ---------- upload ---------- */
-async function doUpload(){
-  const input = $('file');
-  if (!input.files || !input.files.length) return;
-  $('uploadBtn').disabled = true;
-  $('uploadMsg').textContent = 'Uploading…';
-  try {
+function renderBooks(books){
+  const ul = $('#library'); ul.innerHTML = '';
+  books.forEach(b => {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = `/viewer.html?id=${encodeURIComponent(b.id)}&type=${encodeURIComponent(b.type||'epub')}`;
+    a.textContent = b.author ? `${b.title} — ${b.author}` : b.title;
+    li.appendChild(a); ul.appendChild(li);
+  });
+}
+
+async function upload(){
+  const files = $('#file').files;
+  const msg = $('#uploadMsg');
+  if (!files || !files.length) return;
+  msg.textContent = 'Uploading...';
+  try{
     const fd = new FormData();
-    // the server handles name/MIME and stores to R2
-    for (const f of input.files) fd.append('files', f, f.name);
+    for (const f of files) fd.append('files', f);
     const r = await fetch('/api/upload', { method:'POST', body: fd, credentials:'include' });
     if (!r.ok) throw new Error(await r.text());
-    $('uploadMsg').textContent = 'Upload complete.';
-    await refreshLibrary();
-  } catch (e) {
-    $('uploadMsg').textContent = 'Upload failed.';
-  } finally {
-    $('uploadBtn').disabled = false;
-    input.value = '';
-  }
+    msg.textContent = 'Upload complete.'; await refresh();
+  }catch(e){ msg.textContent = 'Upload failed: ' + e.message; }
 }
 
-/* ---------- page init ---------- */
+async function refresh(){
+  const books = await fetchBooks();
+  renderBooks(books);
+}
+
 async function init(){
-  const me = await getMe();      // <-- sends cookies
-  if (me && me.user) {
-    $('who').textContent = me.user.email;
-    $('loginCard').classList.add('hidden');
-    $('appCard').classList.remove('hidden');
-    await refreshLibrary();      // <-- also sends cookies
+  const me = await getMe();
+  if (!me) {
+    $('#appCard').classList.add('hidden');
+    $('#loginCard').classList.remove('hidden');
   } else {
-    $('appCard').classList.add('hidden');
-    $('loginCard').classList.remove('hidden');
+    $('#who').textContent = me.email || me.id;
+    $('#loginCard').classList.add('hidden');
+    $('#appCard').classList.remove('hidden');
+    await refresh();
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  $('btnSend')?.addEventListener('click', sendMagicLink);
-  $('btnSignOut')?.addEventListener('click', signOut);
-  $('btnUpload')?.addEventListener('click', doUpload);
-  $('btnRefresh')?.addEventListener('click', refreshLibrary);
-  init();
-});
+$('#btnSend').addEventListener('click', sendMagicLink);
+$('#btnRefresh').addEventListener('click', refresh);
+$('#btnUpload').addEventListener('click', upload);
+$('#btnSignOut').addEventListener('click', async () => { await fetch('/api/auth/signout', { method:'POST' }); location.reload(); });
+
+init();
 </script>
 </body>
 </html>
