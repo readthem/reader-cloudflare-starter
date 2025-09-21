@@ -1,35 +1,45 @@
+// functions/api/annotations/index.ts
 import type { Env } from '../../_lib/env';
-import { json, unauthorized, badRequest } from '../../_lib/responses';
+import { badRequest, json, unauthorized } from '../../_lib/responses';
 import { requireUser } from '../../_lib/auth';
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const user = await requireUser(request, env);
   if (!user) return unauthorized();
-  const url = new URL(request.url);
-  const bookId = url.searchParams.get('bookId');
-  const chapter = url.searchParams.get('chapter');
+
+  const bookId = new URL(request.url).searchParams.get('bookId');
   if (!bookId) return badRequest('bookId required');
-  let q = 'SELECT id, kind, color, chapter_src, anchor_json, payload_json, group_id FROM annotations WHERE user_id = ? AND book_id = ?';
-  const binds: any[] = [user.id, bookId];
-  if (chapter) { q += ' AND chapter_src = ?'; binds.push(chapter); }
-  q += ' ORDER BY created_at ASC';
-  const rows = await env.DB.prepare(q).bind(...binds).all();
-  const items = (rows.results || []).map((r: any) => ({
-    id: r.id, kind: r.kind, color: r.color, chapter_src: r.chapter_src,
-    anchor: JSON.parse(r.anchor_json), payload: r.payload_json ? JSON.parse(r.payload_json) : null, group_id: r.group_id
-  }));
-  return json({ items });
+
+  const res = await env.DB
+    .prepare(`SELECT id, cfi_range, note, color, tags, updated_at
+              FROM annotations WHERE user_id = ? AND book_id = ?
+              ORDER BY updated_at DESC`)
+    .bind(user.id, bookId)
+    .all<{ id: string; cfi_range: string | null; note: string | null; color: string | null; tags: string | null; updated_at: number }>();
+
+  return json({ items: res.results ?? [] });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const user = await requireUser(request, env);
   if (!user) return unauthorized();
-  const body = await request.json() as any;
-  const id = crypto.randomUUID();
-  const { book_id, kind, color, chapter_src, anchor, payload, group_id } = body || {};
-  if (!book_id || !kind || !anchor) return badRequest('book_id, kind, anchor required');
-  await env.DB.prepare('INSERT INTO annotations (id, user_id, book_id, kind, color, chapter_src, anchor_json, payload_json, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, user.id, book_id, kind, color || null, chapter_src || null, JSON.stringify(anchor), payload ? JSON.stringify(payload) : null, group_id || null)
+
+  const { id, bookId, cfi_range, note, color, tags } = await request.json().catch(() => ({}));
+  if (!bookId) return badRequest('bookId required');
+
+  const annId = id || crypto.randomUUID();
+
+  await env.DB
+    .prepare(`INSERT INTO annotations (id, user_id, book_id, cfi_range, note, color, tags, created_at, updated_at)
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%s','now'), strftime('%s','now'))
+              ON CONFLICT(id) DO UPDATE SET
+                cfi_range=excluded.cfi_range,
+                note=excluded.note,
+                color=excluded.color,
+                tags=excluded.tags,
+                updated_at=strftime('%s','now')`)
+    .bind(annId, user.id, bookId, cfi_range ?? null, note ?? null, color ?? null, tags ?? null)
     .run();
-  return json({ ok: true, id });
+
+  return json({ ok: true, id: annId });
 };
