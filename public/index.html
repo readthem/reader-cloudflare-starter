@@ -26,7 +26,6 @@
     button[disabled] { opacity: .6; cursor: default; }
     #msg { margin-top: 1rem; min-height: 1.25rem; }
     a { color: AccentColor; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   </style>
 </head>
 <body>
@@ -45,7 +44,80 @@
     </section>
   </main>
 
-  <!-- External JS (works under strict CSP) -->
-  <script src="/assets/login.js" defer></script>
+  <script>
+  // Absolute safety net: block any accidental form submit on the page
+  addEventListener('submit', e => { e.preventDefault(); e.stopPropagation(); });
+
+  (function () {
+    const $ = s => document.querySelector(s);
+    const emailEl = $('#email');
+    const btn = $('#btnSend');
+    const msg = $('#msg');
+
+    // If this logs on click, JS is wired; if the page still reloads, a different page is being served
+    btn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      console.log('[login] click caught');
+
+      const email = (emailEl.value || '').trim();
+      if (!email) { emailEl.focus(); return; }
+
+      btn.disabled = true;
+      msg.textContent = 'Sending…';
+
+      let raw;
+      try {
+        const r = await fetch('/api/auth/request-link', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        raw = await r.text();
+      } catch (e) {
+        btn.disabled = false;
+        msg.textContent = 'Could not contact server.';
+        console.error(e);
+        return;
+      }
+
+      // Parse {link} or scrape the exchange URL from an HTML error page
+      let link = null;
+      try { link = JSON.parse(raw).link; } catch {}
+      if (!link) {
+        const m = raw && raw.match(/https?:\/\/[^"'<>\s]+\/api\/auth\/exchange\?t=[^"'<>\s]+/i);
+        if (m) link = m[0];
+      }
+
+      if (!link) {
+        btn.disabled = false;
+        msg.textContent = 'Server did not return a link.';
+        console.warn('RAW:', raw);
+        return;
+      }
+
+      // Try silent cookie set
+      try {
+        await fetch(link, { redirect: 'manual', credentials: 'include' });
+        const me = await fetch('/api/me', { credentials: 'include' }).then(r => r.ok ? r.json() : null);
+        if (me && me.user) {
+          msg.textContent = 'Signed in. Redirecting…';
+          location.replace('/app.html'); // change if your dashboard is elsewhere
+          return;
+        }
+      } catch {}
+
+      // Fallback: manual link
+      msg.innerHTML = 'Could not set cookie automatically. Finish sign-in here: '
+        + `<a href="${link}" rel="noopener noreferrer">exchange</a>`;
+      btn.disabled = false;
+    });
+
+    // Support Enter
+    emailEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); btn.click(); }
+    });
+  })();
+  </script>
 </body>
 </html>
