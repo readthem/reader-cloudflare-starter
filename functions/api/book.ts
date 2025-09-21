@@ -1,13 +1,14 @@
-// functions/api/books.ts
-// List the signed-in user's books. Self-contained so it will compile even if _lib changes.
+// functions/api/books/open.ts
+// Stream a user's book from R2 (inline) by id.
 
-export const onRequestGet: PagesFunction<{
-  DB: D1Database
-}> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<{ DB: D1Database; R2: R2Bucket }> = async ({
+  request,
+  env,
+}) => {
   try {
-    // ---- authenticate via sid cookie ----
-    const sid = getCookie(request.headers.get('cookie') || '', 'sid');
-    if (!sid) return text('Unauthorized', 401);
+    // ---- auth via session cookie ----
+    const sid = cookie(request.headers.get('cookie') || '', 'sid');
+    if (!sid) return txt('Unauthorized', 401);
 
     const user = await env.DB
       .prepare(
@@ -20,42 +21,57 @@ export const onRequestGet: PagesFunction<{
       .bind(sid)
       .first<{ id: string; email: string }>();
 
-    if (!user) return text('Unauthorized', 401);
+    if (!user) return txt('Unauthorized', 401);
 
-    // ---- fetch books for user ----
-    const { results } = await env.DB
+    // ---- get book row ----
+    const id = new URL(request.url).searchParams.get('id') || '';
+    if (!id) return txt('missing id', 400);
+
+    const row = await env.DB
       .prepare(
-        `SELECT
-            id,
-            title,
-            type,
-            r2_key    AS r2Key,
-            created_at AS createdAt
-         FROM books
-         WHERE user_id = ?1
-         ORDER BY created_at DESC, id DESC`
+        `SELECT title, type, r2_key
+           FROM books
+          WHERE id = ?1 AND user_id = ?2
+          LIMIT 1`
       )
-      .bind(user.id)
-      .all();
+      .bind(id, user.id)
+      .first<{ title: string | null; type: string; r2_key: string }>();
 
-    return json({ items: results ?? [] });
-  } catch (err: any) {
-    // Always return JSON so the UI doesn't get a big HTML error page.
-    return json({ items: [], error: String(err?.message ?? err) }, 500);
+    if (!row) return txt('not found', 404);
+
+    // ---- stream object from R2 ----
+    const obj = await env.R2.get(row.r2_key);
+    if (!obj || !obj.body) return txt('file missing', 404);
+
+    const contentType =
+      obj.httpMetadata?.contentType ||
+      (row.type === 'pdf' ? 'application/pdf' : 'application/epub+zip');
+
+    const filename = sanitizeFilename(`${(row.title || id).trim()}.${row.type}`);
+    const headers = new Headers({
+      'content-type': contentType,
+      'content-length': String(obj.size ?? ''),
+      etag: obj.etag || '',
+      'cache-control': 'private, max-age=0, must-revalidate',
+      // open in browser tab when possible
+      'content-disposition': `inline; filename="${filename}"`,
+    });
+
+    return new Response(obj.body, { headers });
+  } catch (e: any) {
+    return txt(`error: ${e?.message || e}`, 500);
   }
 };
 
-// ---------- helpers ----------
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-function text(msg: string, status = 200) {
+// ------- helpers -------
+function txt(msg: string, status = 200) {
   return new Response(msg, { status, headers: { 'content-type': 'text/plain' } });
 }
-function getCookie(cookieHeader: string, name: string) {
-  const m = cookieHeader.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
+function cookie(h: string, n: string) {
+  const m = h.match(new RegExp(`(?:^|; )${n}=([^;]+)`));
   return m ? decodeURIComponent(m[1]) : null;
+}
+function sanitizeFilename(s: string) {
+  // keep it simple & safe
+  return s.replace(/[\\/:*?"<>|]/g, '_').slice(0, 200);
 }
