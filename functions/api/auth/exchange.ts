@@ -1,6 +1,6 @@
 // functions/api/auth/exchange.ts
-// Sets the session cookie on a 200 HTML response (most reliable for browsers)
-// and redirects to "/" via meta-refresh.
+// Validates the token, sets the session cookie on a 200 HTML page, then
+// meta-refreshes back to "/". This avoids cookie drops from 302s.
 
 type Row = { user_id: string; expires_at?: number | null };
 
@@ -16,8 +16,7 @@ function homeFrom(req: Request, env: Bindings) {
 }
 
 function cookieFor(sessionId: string) {
-  // 30 days
-  const maxAge = 60 * 60 * 24 * 30;
+  const maxAge = 60 * 60 * 24 * 30; // 30 days
   return [
     `sid=${encodeURIComponent(sessionId)}`,
     "Path=/",
@@ -46,14 +45,11 @@ async function validateSession(env: Bindings, sid: string) {
   return { ok: true as const };
 }
 
-// We accept GET (links clicked in email) and POST (if you ever call via fetch)
 export const onRequest: PagesFunction<Bindings> = async (ctx) => {
   try {
     const url = new URL(ctx.request.url);
     const sid = (url.searchParams.get("t") || "").trim();
-    if (!sid) {
-      return new Response("Missing token", { status: 400 });
-    }
+    if (!sid) return new Response("Missing token", { status: 400 });
 
     const check = await validateSession(ctx.env, sid);
     if (!check.ok) {
@@ -80,7 +76,7 @@ export const onRequest: PagesFunction<Bindings> = async (ctx) => {
         "Referrer-Policy": "no-referrer",
       },
     });
-  } catch (err) {
+  } catch {
     return new Response("Server error", { status: 500 });
   }
 };
