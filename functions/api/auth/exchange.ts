@@ -1,24 +1,26 @@
 // functions/api/auth/exchange.ts
-// Validates the token, sets the session cookie on a 200 HTML page, then
-// meta-refreshes back to "/". This avoids cookie drops from 302s.
+// Validates the token, sets cookie with Domain=<project>.pages.dev (or custom domain),
+// then meta-refreshes to that same domain's "/".
 
-type Row = { user_id: string; expires_at?: number | null };
+type SessRow = { user_id: string; expires_at?: number | null } | null;
 
 interface Bindings {
   DB: D1Database;
-  APP_ORIGIN?: string;
 }
 
-function homeFrom(req: Request, env: Bindings) {
-  const u = new URL(req.url);
-  const base = (env.APP_ORIGIN || `${u.protocol}//${u.host}`).replace(/\/+$/, "");
-  return `${base}/`;
+function stableCookieDomain(hostname: string) {
+  const parts = hostname.split(".");
+  if (parts.length >= 3 && parts.slice(-2).join(".") === "pages.dev") {
+    return parts.slice(-3).join("."); // "project.pages.dev"
+  }
+  return hostname; // custom domain
 }
 
-function cookieFor(sessionId: string) {
+function cookieHeader(sessionId: string, domain: string) {
   const maxAge = 60 * 60 * 24 * 30; // 30 days
   return [
     `sid=${encodeURIComponent(sessionId)}`,
+    `Domain=${domain}`,
     "Path=/",
     "HttpOnly",
     "Secure",
@@ -27,38 +29,28 @@ function cookieFor(sessionId: string) {
   ].join("; ");
 }
 
-async function validateSession(env: Bindings, sid: string) {
-  const row = (await env.DB.prepare(
-    "SELECT user_id, expires_at FROM sessions WHERE id = ?"
-  )
-    .bind(sid)
-    .first<Row>()) as Row | null;
-
-  if (!row) return { ok: false as const, reason: "invalid" };
-
-  if (row.expires_at != null) {
-    const now = Math.floor(Date.now() / 1000);
-    if (Number(row.expires_at) < now) {
-      return { ok: false as const, reason: "expired" };
-    }
-  }
-  return { ok: true as const };
-}
-
-export const onRequest: PagesFunction<Bindings> = async (ctx) => {
+export const onRequestGet: PagesFunction<Bindings> = async ({ request, env }) => {
   try {
-    const url = new URL(ctx.request.url);
+    const url = new URL(request.url);
     const sid = (url.searchParams.get("t") || "").trim();
     if (!sid) return new Response("Missing token", { status: 400 });
 
-    const check = await validateSession(ctx.env, sid);
-    if (!check.ok) {
-      const msg = check.reason === "expired" ? "Token expired" : "Invalid token";
-      return new Response(msg, { status: 401 });
+    const row = (await env.DB.prepare(
+      "SELECT user_id, expires_at FROM sessions WHERE id = ?"
+    )
+      .bind(sid)
+      .first<SessRow>()) as SessRow;
+
+    if (!row) return new Response("Invalid token", { status: 401 });
+    if (row.expires_at != null) {
+      const now = Math.floor(Date.now() / 1000);
+      if (Number(row.expires_at) < now) return new Response("Invalid token", { status: 401 });
     }
 
-    const cookie = cookieFor(sid);
-    const home = homeFrom(ctx.request, ctx.env);
+    const { protocol, hostname } = url;
+    const domain = stableCookieDomain(hostname);
+    const cookie = cookieHeader(sid, domain);
+    const home = `${protocol}//${domain}/`;
 
     const html = `<!doctype html>
 <meta charset="utf-8">
