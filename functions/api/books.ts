@@ -1,59 +1,19 @@
 // functions/api/books.ts
-// List the signed-in user's books. Self-contained endpoint.
+import type { Env } from '../_lib/env';
+import { json, unauthorized } from '../_lib/responses';
+import { requireUser } from '../_lib/auth';
 
-export const onRequestGet: PagesFunction<{ DB: D1Database }> = async ({ request, env }) => {
-  try {
-    // ---- read session cookie ----
-    const sid = getCookie(request.headers.get('cookie') || '', 'sid');
-    if (!sid) return text('Unauthorized', 401);
+export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
+  const user = await requireUser(request, env);
+  if (!user) return unauthorized();
 
-    // ---- look up user by session ----
-    const user = await env.DB
-      .prepare(
-        `SELECT u.id, u.email
-           FROM sessions s
-           JOIN users u ON u.id = s.user_id
-          WHERE s.id = ?1
-          LIMIT 1`
-      )
-      .bind(sid)
-      .first<{ id: string; email: string }>();
+  const rows = await env.DB
+    .prepare(`SELECT id, title, author, type, r2_key AS key
+              FROM books
+              WHERE user_id = ?
+              ORDER BY created_at DESC`)
+    .bind(user.id)
+    .all<{ id: string; title: string; author: string | null; type: 'epub'|'pdf'; key: string }>();
 
-    if (!user) return text('Unauthorized', 401);
-
-    // ---- fetch books for user ----
-    const { results } = await env.DB
-      .prepare(
-        `SELECT
-            id,
-            title,
-            type,
-            r2_key    AS r2Key,
-            created_at AS createdAt
-         FROM books
-         WHERE user_id = ?1
-         ORDER BY created_at DESC, id DESC`
-      )
-      .bind(user.id)
-      .all();
-
-    return json({ items: results ?? [] });
-  } catch (err: any) {
-    return json({ items: [], error: String(err?.message ?? err) }, 500);
-  }
+  return json({ books: rows.results ?? [] });
 };
-
-// ---------- helpers ----------
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-function text(msg: string, status = 200) {
-  return new Response(msg, { status, headers: { 'content-type': 'text/plain' } });
-}
-function getCookie(cookieHeader: string, name: string) {
-  const m = cookieHeader.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
-  return m ? decodeURIComponent(m[1]) : null;
-}
