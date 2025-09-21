@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reader · Library</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
+    .wrap { max-width: 1100px; margin: 5vh auto; padding: 1.5rem; }
+    h1 { margin: 0 0 1rem; font-size: clamp(1.4rem, 2vw + 1rem, 2rem); }
+    .bar { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem; }
+    .pill { padding:.7rem 1rem; border:1px solid color-mix(in oklab, CanvasText 12%, Canvas 88%); border-radius:12px; background:Field; color:FieldText; }
+    button.pill { cursor:pointer; font-weight:600; }
+    ul { list-style:none; padding:0; margin:1rem 0 0; }
+    li { padding:.9rem 0; border-bottom:1px solid color-mix(in oklab, CanvasText 10%, Canvas 90%); }
+    a.row { text-decoration:none; color:inherit; display:block; }
+    small { opacity:.7; }
+    #msg { min-height:1.25rem; margin-top:.5rem; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Your Library</h1>
+
+    <div class="bar">
+      <span id="who" class="pill">…</span>
+      <label class="pill">
+        <input id="file" type="file" multiple style="display:none" />
+        Choose files
+      </label>
+      <button id="btnUpload" class="pill">Upload</button>
+      <button id="btnRefresh" class="pill">Refresh Library</button>
+      <button id="btnOut" class="pill">Sign out</button>
+    </div>
+    <div id="msg"></div>
+
+    <ul id="list"></ul>
+  </main>
+
+<script>
+(async function () {
+  const $ = s => document.querySelector(s);
+  const who = $('#who'), list = $('#list'), msg = $('#msg');
+
+  // 1) Require session
+  const me = await fetch('/api/me', { credentials:'include' }).then(r => r.ok ? r.json() : null);
+  if (!me || !me.user) { location.replace('/'); return; }
+  who.textContent = `Signed in as ${me.email}`;
+
+  // 2) Load books
+  async function load() {
+    msg.textContent = 'Loading…';
+    list.innerHTML = '';
+    try {
+      const r = await fetch('/api/books', { credentials:'include' });
+      const data = await r.json(); // expected: { books:[{id,title,author,type,source?}] }
+      const items = (data.books || data || []);
+      if (!items.length) { msg.textContent = 'No books yet.'; return; }
+      msg.textContent = '';
+      for (const b of items) {
+        const li = document.createElement('li');
+        const meta = [b.author, (b.publisher || b.source), (b.type || '').toUpperCase()]
+                      .filter(Boolean).join(' • ');
+        li.innerHTML = `<a class="row" href="#">${b.title} <br/><small>${meta}</small></a>`;
+        li.querySelector('a').addEventListener('click', (e) => {
+          e.preventDefault();
+          // Open your viewer, pass the book id
+          location.href = `/index.toc.v8.html?book=${encodeURIComponent(b.id)}`;
+        });
+        list.appendChild(li);
+      }
+    } catch (e) {
+      console.error(e);
+      msg.textContent = 'Could not load library.';
+    }
+  }
+
+  // 3) Upload
+  $('#btnUpload').addEventListener('click', async () => {
+    const input = $('#file');
+    if (!input.files || !input.files.length) { input.click(); return; }
+    const fd = new FormData();
+    for (const f of input.files) fd.append('files', f);
+    msg.textContent = 'Uploading…';
+    try {
+      const r = await fetch('/api/upload', { method:'POST', body: fd, credentials:'include' });
+      if (!r.ok) throw new Error(await r.text());
+      msg.textContent = 'Upload complete.';
+      input.value = '';
+      load();
+    } catch (e) {
+      console.error(e);
+      msg.textContent = 'Upload failed.';
+    }
+  });
+
+  $('#btnRefresh').addEventListener('click', load);
+
+  $('#btnOut').addEventListener('click', async () => {
+    // call your sign-out endpoint if you have one; otherwise clear cookie and go home
+    try { await fetch('/api/auth/signout', { credentials:'include' }); } catch {}
+    document.cookie = 'sid=; Max-Age=0; path=/; SameSite=Lax';
+    location.replace('/');
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
