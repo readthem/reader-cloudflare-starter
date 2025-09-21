@@ -1,111 +1,131 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Reader · Library</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
-    .wrap { max-width: 1100px; margin: 5vh auto; padding: 1.5rem; }
-    h1 { margin: 0 0 1rem; font-size: clamp(1.4rem, 2vw + 1rem, 2rem); }
-    .bar { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem; }
-    .pill { padding:.7rem 1rem; border:1px solid color-mix(in oklab, CanvasText 12%, Canvas 88%); border-radius:12px; background:Field; color:FieldText; }
-    button.pill { cursor:pointer; font-weight:600; }
-    ul { list-style:none; padding:0; margin:1rem 0 0; }
-    li { padding:.9rem 0; border-bottom:1px solid color-mix(in oklab, CanvasText 10%, Canvas 90%); }
-    a.row { text-decoration:none; color:inherit; display:block; }
-    small { opacity:.7; }
-    #msg { min-height:1.25rem; margin-top:.5rem; }
-  </style>
-</head>
-<body>
-  <main class="wrap">
-    <h1>Your Library</h1>
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Your Library</title>
+<style>
+  body{font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:24px; color:#111}
+  h1{margin:0 0 16px}
+  .card{border:1px solid #e7e7e7; border-radius:12px; padding:16px; max-width:980px}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  input,button{font:inherit}
+  button{cursor:pointer; padding:.55rem .9rem; border-radius:10px; border:1px solid #ccc; background:#f7f7f7}
+  button:hover{background:#eee}
+  .list{margin-top:18px}
+  .item{padding:12px 8px; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center}
+  .meta{flex:1 1 auto}
+  .title{font-weight:600}
+  .author{color:#666}
+  .progress{min-width:120px; color:#444}
+  .danger{border-color:#e78; background:#fde}
+  .muted{color:#666}
+  .hidden{display:none}
+</style>
 
-    <div class="bar">
-      <span id="who" class="pill">…</span>
-      <label class="pill">
-        <input id="file" type="file" multiple style="display:none" />
-        Choose files
-      </label>
-      <button id="btnUpload" class="pill">Upload</button>
-      <button id="btnRefresh" class="pill">Refresh Library</button>
-      <button id="btnOut" class="pill">Sign out</button>
+<h1>Your Library</h1>
+<div class="card">
+  <div id="loginSection">
+    <p><strong>Sign in</strong></p>
+    <div class="row">
+      <input id="email" placeholder="you@example.com" style="padding:.5rem .7rem; border-radius:10px; border:1px solid #ccc; min-width:260px" />
+      <button id="btnSend">Send magic link</button>
     </div>
-    <div id="msg"></div>
+    <p id="loginMsg" class="muted"></p>
+  </div>
 
-    <ul id="list"></ul>
-  </main>
+  <div id="appSection" class="hidden">
+    <div class="row" style="margin-bottom:12px">
+      <span>Signed in as <strong id="who">…</strong></span>
+      <input id="file" type="file" multiple />
+      <button id="btnUpload">Upload</button>
+      <button id="btnRefresh">Refresh Library</button>
+      <button id="btnOut">Sign out</button>
+    </div>
+    <div id="list" class="list"></div>
+  </div>
+</div>
 
 <script>
-(async function () {
-  const $ = s => document.querySelector(s);
-  const who = $('#who'), list = $('#list'), msg = $('#msg');
+async function me(){
+  try{ const r=await fetch('/api/me',{credentials:'include'}); const j=await r.json(); return j.user||null }catch{ return null }
+}
+function fmtPct(p){ if(p==null) return '—'; return Math.round((p||0)*100)+'%' }
+function el(tag, attrs={}, ...kids){
+  const n=document.createElement(tag); for(const k in attrs){
+    if(k==='class') n.className=attrs[k]; else if(k==='html') n.innerHTML=attrs[k]; else n.setAttribute(k, attrs[k])
+  }
+  for(const k of kids){ if(typeof k==='string') n.appendChild(document.createTextNode(k)); else if(k) n.appendChild(k) }
+  return n
+}
+async function refresh(){
+  const r=await fetch('/api/books',{credentials:'include'})
+  const j=await r.json(); const list=document.getElementById('list'); list.innerHTML=''
+  for(const b of (j.books||[])){
+    const title = b.title || 'Untitled'
+    const author = b.author || ''
+    const row = el('div',{class:'item'},
+      el('div',{class:'meta'},
+        el('div',{class:'title'}, `${title}`),
+        el('div',{class:'author'}, author ? `— ${author}` : '')
+      ),
+      el('div',{class:'progress'}, fmtPct(b.percent)),
+      el('button',{class:'danger', onclick:async (e)=>{
+        if(!confirm('Remove this book?')) return
+        await fetch(`/api/books/${encodeURIComponent(b.id)}`, {method:'DELETE', credentials:'include'})
+        refresh()
+      }}, 'Remove'),
+    )
+    row.addEventListener('click', (ev)=>{
+      if(ev.target.tagName==='BUTTON') return
+      location.href = `/viewer.html?book=${encodeURIComponent(b.id)}`
+    })
+    list.appendChild(row)
+  }
+}
+async function upload(){
+  const fi=document.getElementById('file')
+  if(!fi.files || !fi.files.length) return alert('Pick files first')
+  const fd = new FormData()
+  Array.from(fi.files).forEach(f => fd.append('files', f, f.name))
+  const r=await fetch('/api/upload', {method:'POST', body:fd, credentials:'include'})
+  if(!r.ok){ alert(await r.text()); return }
+  await refresh()
+  fi.value=''
+}
 
-  // 1) Require session
-  const me = await fetch('/api/me', { credentials:'include' }).then(r => r.ok ? r.json() : null);
-  if (!me || !me.user) { location.replace('/'); return; }
-  who.textContent = `Signed in as ${me.email}`;
-
-  // 2) Load books
-  async function load() {
-    msg.textContent = 'Loading…';
-    list.innerHTML = '';
-    try {
-      const r = await fetch('/api/books', { credentials:'include' });
-      const data = await r.json(); // expected: { books:[{id,title,author,type,source?}] }
-      const items = (data.books || data || []);
-      if (!items.length) { msg.textContent = 'No books yet.'; return; }
-      msg.textContent = '';
-      for (const b of items) {
-        const li = document.createElement('li');
-        const meta = [b.author, (b.publisher || b.source), (b.type || '').toUpperCase()]
-                      .filter(Boolean).join(' • ');
-        li.innerHTML = `<a class="row" href="#">${b.title} <br/><small>${meta}</small></a>`;
-        li.querySelector('a').addEventListener('click', (e) => {
-          e.preventDefault();
-          // Open your viewer, pass the book id
-          location.href = `/viewer.html?book=${encodeURIComponent(b.id)}`;
-        });
-        list.appendChild(li);
-      }
-    } catch (e) {
-      console.error(e);
-      msg.textContent = 'Could not load library.';
-    }
+(async function init(){
+  const user = await me()
+  if(!user){
+    document.getElementById('loginSection').classList.remove('hidden')
+    document.getElementById('appSection').classList.add('hidden')
+  }else{
+    document.getElementById('loginSection').classList.add('hidden')
+    document.getElementById('appSection').classList.remove('hidden')
+    document.getElementById('who').textContent = user.email
+    refresh()
   }
 
-  // 3) Upload
-  $('#btnUpload').addEventListener('click', async () => {
-    const input = $('#file');
-    if (!input.files || !input.files.length) { input.click(); return; }
-    const fd = new FormData();
-    for (const f of input.files) fd.append('files', f);
-    msg.textContent = 'Uploading…';
-    try {
-      const r = await fetch('/api/upload', { method:'POST', body: fd, credentials:'include' });
-      if (!r.ok) throw new Error(await r.text());
-      msg.textContent = 'Upload complete.';
-      input.value = '';
-      load();
-    } catch (e) {
-      console.error(e);
-      msg.textContent = 'Upload failed.';
+  // login
+  document.getElementById('btnSend').addEventListener('click', async ()=>{
+    const email = (document.getElementById('email').value||'').trim()
+    if(!email) return
+    const msg = document.getElementById('loginMsg'); msg.textContent = 'Sending…'
+    const r = await fetch('/api/auth/request-link', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({email})})
+    const j = await r.json().catch(()=>({}))
+    if(j && j.link){
+      // open the exchange in a new tab to set the cookie, then come back
+      window.open(j.link, '_blank', 'noopener')
+      msg.innerHTML = `Magic link opened in a new tab. <a href="${j.link}">Click here</a> if it didn’t.`
+    }else{
+      msg.textContent = 'Could not send link.'
     }
-  });
+  })
 
-  $('#btnRefresh').addEventListener('click', load);
-
-  $('#btnOut').addEventListener('click', async () => {
-    // call your sign-out endpoint if you have one; otherwise clear cookie and go home
-    try { await fetch('/api/auth/signout', { credentials:'include' }); } catch {}
-    document.cookie = 'sid=; Max-Age=0; path=/; SameSite=Lax';
-    location.replace('/');
-  });
-
-  load();
+  // out
+  document.getElementById('btnOut').addEventListener('click', async ()=>{
+    await fetch('/api/auth/signout', {method:'POST', credentials:'include'})
+    location.reload()
+  })
+  document.getElementById('btnUpload').addEventListener('click', upload)
+  document.getElementById('btnRefresh').addEventListener('click', refresh)
 })();
 </script>
-</body>
-</html>
