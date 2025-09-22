@@ -2,6 +2,26 @@ import type { Env } from '../../_lib/env';
 import { json, badRequest, unauthorized } from '../../_lib/responses';
 import { requireUser } from '../../_lib/auth';
 
+// List annotations for a book (used to restore on refresh)
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const user = await requireUser(request, env);
+  if (!user) return unauthorized();
+
+  const url = new URL(request.url);
+  const bookId = url.searchParams.get('bookId');
+  if (!bookId) return badRequest('bookId required');
+
+  const { results } = await env.DB.prepare(
+    `SELECT id, note, color, tags, created_at, updated_at
+       FROM annotations
+      WHERE user_id = ? AND book_id = ?
+      ORDER BY created_at ASC`
+  ).bind(user.id, bookId).all();
+
+  return json(results || []);
+};
+
+// Upsert a single annotation (existing code kept intact)
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const user = await requireUser(request, env);
   if (!user) return unauthorized();
