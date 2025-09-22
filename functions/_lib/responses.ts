@@ -1,11 +1,31 @@
-export const json = (data: unknown, init: ResponseInit = {}) =>
-  new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json', ...(init.headers||{}) } })
+// Lightweight JSON helpers for Pages Functions
 
-export const badRequest = (msg = 'Bad Request') =>
-  new Response(msg, { status: 400 })
+type JsonInit = ResponseInit & { headers?: HeadersInit };
 
-export const unauthorized = (msg = 'Unauthorized') =>
-  new Response(msg, { status: 401 })
+export function json(data: unknown, init: JsonInit = {}): Response {
+  const headers: HeadersInit = {
+    "content-type": "application/json; charset=utf-8",
+    ...init.headers,
+  };
+  return new Response(JSON.stringify(data), { ...init, headers });
+}
 
-export const notFound = (msg = 'Not found') =>
-  new Response(msg, { status: 404 })
+export function badRequest(message = "bad request"): Response {
+  return json({ ok: false, error: message }, { status: 400 });
+}
+
+export function unauthorized(message = "unauthorized"): Response {
+  return json({ ok: false, error: message }, { status: 401 });
+}
+
+export function forbidden(message = "forbidden"): Response {
+  return json({ ok: false, error: message }, { status: 403 });
+}
+
+export function notFound(message = "not found"): Response {
+  return json({ ok: false, error: message }, { status: 404 });
+}
+
+export function serverError(message = "internal error"): Response {
+  return json({ ok: false, error: message }, { status: 500 });
+}
