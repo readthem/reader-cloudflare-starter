@@ -1,44 +1,70 @@
-import type { Env } from './env'
+// Cookie-based session lookup. Assumes a `sessions` table in D1.
+//
+// Minimal contract used by API routes: return `{ id: string }` for the user,
+// or `null` if not authenticated.
 
-function cookie(name:string, value:string, opts:Record<string,string|number|boolean>){
-  const parts = [`${name}=${value}`]
-  if (opts['Max-Age']!==undefined) parts.push(`Max-Age=${opts['Max-Age']}`)
-  if (opts['Path']) parts.push(`Path=${opts['Path']}`)
-  if (opts['SameSite']) parts.push(`SameSite=${opts['SameSite']}`)
-  if (opts['Secure']) parts.push(`Secure`)
-  if (opts['HttpOnly']) parts.push(`HttpOnly`)
-  return parts.join('; ')
+import type { Env } from "./env";
+
+export type User = {
+  id: string;
+  email?: string | null;
+};
+
+function parseCookie(cookieHeader: string | null): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!cookieHeader) return out;
+  for (const part of cookieHeader.split(/;\s*/)) {
+    const i = part.indexOf("=");
+    if (i === -1) continue;
+    const k = part.slice(0, i).trim();
+    const v = part.slice(i + 1).trim();
+    if (!k) continue;
+    try {
+      out[k] = decodeURIComponent(v);
+    } catch {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
-export async function requireUser(request: Request, env: Env){
-  const sid = (request.headers.get('Cookie')||'').split(/;\s*/).map(s=>s.trim()).find(s=>s.startsWith('sid='))?.slice(4)
-  if (!sid) return null
-  const row = await env.DB.prepare(
-    `SELECT sessions.user_id, users.email, sessions.expires_at
-     FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.id=?`
-  ).bind(sid).first<{user_id:string,email:string,expires_at:number}>()
-  if (!row) return null
-  if (row.expires_at < Math.floor(Date.now()/1000)) return null
-  return { id: row.user_id, email: row.email }
-}
+export async function requireUser(request: Request, env: Env): Promise<User | null> {
+  // Look for a session cookie named "sid"
+  const cookies = parseCookie(request.headers.get("cookie"));
+  const sid = (cookies["sid"] || "").trim();
+  if (!sid) return null;
 
-export async function setSession(userId: string, env: Env){
-  const sid = crypto.randomUUID().replace(/-/g,'')
-  const ttl = 60*60*24*30 // 30 days
-  const now = Math.floor(Date.now()/1000)
-  await env.DB.prepare(`INSERT INTO sessions (id,user_id,created_at,expires_at) VALUES (?,?,?,?)`)
-    .bind(sid, userId, now, now+ttl).run()
-  const headers = new Headers()
-  headers.append('Set-Cookie', cookie('sid', sid, {
-    'Path': '/', 'Max-Age': ttl, 'HttpOnly': true, 'Secure': true, 'SameSite': 'Lax'
-  }))
-  return headers
-}
+  // Find session → user
+  // Expected schema:
+  //   sessions(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER)
+  //   users(id TEXT PRIMARY KEY, email TEXT)
+  try {
+    const sess = await env.DB
+      .prepare(`SELECT user_id, expires_at FROM sessions WHERE id = ?`)
+      .bind(sid)
+      .first<{ user_id: string; expires_at: number | null }>();
 
-export async function clearSession(env: Env, request: Request){
-  const sid = (request.headers.get('Cookie')||'').split(/;\s*/).map(s=>s.trim()).find(s=>s.startsWith('sid='))?.slice(4)
-  if (sid) await env.DB.prepare('DELETE FROM sessions WHERE id=?').bind(sid).run()
-  const headers = new Headers()
-  headers.append('Set-Cookie', cookie('sid','', {'Path':'/','Max-Age':0,'HttpOnly':true,'Secure':true,'SameSite':'Lax'}))
-  return headers
+    if (!sess || !sess.user_id) return null;
+
+    // Check expiry if present (unix seconds)
+    if (sess.expires_at && Date.now() / 1000 > Number(sess.expires_at)) {
+      return null;
+    }
+
+    // Optional: join to users for email (non-fatal if users table doesn't exist)
+    try {
+      const u = await env.DB
+        .prepare(`SELECT id, email FROM users WHERE id = ?`)
+        .bind(sess.user_id)
+        .first<{ id: string; email: string | null }>();
+      if (u && u.id) return { id: u.id, email: u.email };
+    } catch {
+      // If there's no users table, just return the id from session
+    }
+
+    return { id: sess.user_id };
+  } catch {
+    // If the sessions table isn't there yet, treat as unauthenticated
+    return null;
+  }
 }
