@@ -53,14 +53,19 @@
       return r.json();
     });
 
+  // Title label: prefer DB author; otherwise split only the FIRST separator
+  // (supports -, –, —, and --) and ignore extra segments (publisher, source, etc.)
   function labelFor(b){
     const titleRaw = (b.title && b.title.trim())
       || (b.r2_key ? b.r2_key.split('/').pop().replace(/\.[^.]+$/,'') : b.id);
     let title = titleRaw;
     let author = (b.author && b.author.trim()) || '';
-    if (!author && title.includes(' - ')) {
-      const parts = title.split(' - ');
-      if (parts.length >= 2){ title = parts[0].trim(); author = parts.slice(1).join(' - ').trim(); }
+    if (!author && /\s[-–—]{1,2}\s/.test(title)) {
+      const parts = title.split(/\s[-–—]{1,2}\s/);
+      if (parts.length >= 2){
+        title = parts[0].trim();
+        author = parts[1].trim(); // only the second chunk; drop the rest
+      }
     }
     return author ? `${title} – ${author}` : title;
   }
